@@ -51,6 +51,7 @@ client_scripts {
     'client/managers/ArrestManager.lua',
     'client/managers/CustodyManager.lua',
     'client/managers/SceneManager.lua',
+    'client/managers/MissionManager.lua',
 
     'client/managers/DispatchManager.lua',
     'client/managers/EvidenceManager.lua',

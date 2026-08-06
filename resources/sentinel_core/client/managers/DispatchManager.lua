@@ -1,38 +1,73 @@
+print("[Sentinel AI] Cargando DispatchManager...")
+
 local dispatchDelay = 15000
 local nextDispatchAt = nil
 
 local lastDispatchIndex = nil
 local lastLocationByType = {}
 
+local scenePreparing = false
 local scenePrepared = false
 local sceneSpawned = false
 
+-- =========================================================
+-- LIMPIEZA DEL DESPACHO
+-- =========================================================
+
 local function removeDispatchBlip()
-    if PlayerData.DispatchBlip
+    if PlayerData
+        and PlayerData.DispatchBlip
         and DoesBlipExist(PlayerData.DispatchBlip) then
 
         RemoveBlip(PlayerData.DispatchBlip)
     end
 
-    PlayerData.DispatchBlip = nil
+    if PlayerData then
+        PlayerData.DispatchBlip = nil
+    end
+
     SetWaypointOff()
 end
 
-local function resetDispatch()
-    removeDispatchBlip()
-
-    PlayerData.CurrentDispatch = nil
-    nextDispatchAt = nil
-
+local function resetSceneRuntime()
+    scenePreparing = false
     scenePrepared = false
     sceneSpawned = false
 
-    if SceneBuilder then
+    if SceneBuilder
+        and type(SceneBuilder.Reset) == "function" then
+
         SceneBuilder.Reset()
     end
 end
 
-local function selectDifferentIndex(count, previousIndex)
+local function resetDispatch()
+    removeDispatchBlip()
+    resetSceneRuntime()
+
+    if PlayerData then
+        PlayerData.CurrentDispatch = nil
+    end
+
+    nextDispatchAt = nil
+end
+
+-- Función pública para que MissionManager pueda usarla
+-- más adelante sin depender de funciones locales.
+function ResetDispatchRuntime()
+    resetDispatch()
+
+    return true
+end
+
+-- =========================================================
+-- SELECCIÓN DE INCIDENTES
+-- =========================================================
+
+local function selectDifferentIndex(
+    count,
+    previousIndex
+)
     if count <= 1 then
         return 1
     end
@@ -58,9 +93,11 @@ local function buildDispatchInstance(definition)
 
         if definition.location then
             return {
-                code = definition.code,
-                type = definition.type,
-                title = definition.title,
+                code = definition.code or "000",
+                type = definition.type or "GENERIC",
+                title = definition.title
+                    or "Incidente sin identificar",
+
                 location = definition.location,
                 locationIndex = 1
             }
@@ -69,8 +106,11 @@ local function buildDispatchInstance(definition)
         return nil
     end
 
+    local dispatchType =
+        definition.type or "GENERIC"
+
     local previousLocation =
-        lastLocationByType[definition.type]
+        lastLocationByType[dispatchType]
 
     local locationIndex =
         selectDifferentIndex(
@@ -78,12 +118,13 @@ local function buildDispatchInstance(definition)
             previousLocation
         )
 
-    lastLocationByType[definition.type] =
+    lastLocationByType[dispatchType] =
         locationIndex
 
     return {
         code = definition.code or "000",
-        type = definition.type or "GENERIC",
+        type = dispatchType,
+
         title = definition.title
             or "Incidente sin identificar",
 
@@ -123,13 +164,17 @@ local function sendRandomDispatch()
             {255, 80, 80}
         )
 
-        PlayerData.DispatchState = "WAITING"
+        if PlayerData then
+            PlayerData.DispatchState = "WAITING"
+        end
 
         nextDispatchAt =
             GetGameTimer() + dispatchDelay
 
         return false
     end
+
+    resetSceneRuntime()
 
     PlayerData.CurrentDispatch =
         selectedDispatch
@@ -151,7 +196,19 @@ local function sendRandomDispatch()
     return true
 end
 
+-- =========================================================
+-- GPS Y PREPARACIÓN DE ESCENA
+-- =========================================================
+
 local function createDispatchBlip(incident)
+    if not incident
+        or not incident.location then
+
+        return false
+    end
+
+    removeDispatchBlip()
+
     local blip = AddBlipForCoord(
         incident.location.x,
         incident.location.y,
@@ -162,6 +219,7 @@ local function createDispatchBlip(incident)
     SetBlipColour(blip, 1)
     SetBlipScale(blip, 0.9)
     SetBlipAsShortRange(blip, false)
+
     SetBlipRoute(blip, true)
     SetBlipRouteColour(blip, 1)
 
@@ -182,12 +240,54 @@ local function createDispatchBlip(incident)
         incident.location.x,
         incident.location.y
     )
+
+    return true
 end
 
 local function prepareScene(incident)
+    if scenePreparing
+        or scenePrepared then
+
+        return false
+    end
+
+    if not SceneBuilder
+        or type(SceneBuilder.Build) ~= "function" then
+
+        print(
+            "[Sentinel AI] ERROR: SceneBuilder.Build no está disponible."
+        )
+
+        return false
+    end
+
+    scenePreparing = true
+
     CreateThread(function()
-        local layout =
-            SceneBuilder.Build(incident)
+        local success, layout =
+            pcall(
+                SceneBuilder.Build,
+                incident
+            )
+
+        scenePreparing = false
+
+        if not success then
+            scenePrepared = false
+
+            print(
+                "[Sentinel AI] ERROR preparando escena: "
+                    .. tostring(layout)
+            )
+
+            Sentinel.Notify(
+                "ERROR",
+                "No fue posible preparar la escena.",
+                {255, 80, 80}
+            )
+
+            return
+        end
 
         scenePrepared = layout ~= nil
 
@@ -197,8 +297,47 @@ local function prepareScene(incident)
                 "Escena validada. Unidades continúan en ruta.",
                 {90, 190, 255}
             )
+        else
+            print(
+                "[Sentinel AI] SceneBuilder no devolvió un diseño válido."
+            )
         end
     end)
+
+    return true
+end
+
+-- =========================================================
+-- ACEPTAR DESPACHO
+-- =========================================================
+
+local function cleanupStaleMission(incident)
+    if not MissionManager
+        or MissionManager.Active ~= true
+        or type(MissionManager.EndMission) ~= "function" then
+
+        return
+    end
+
+    print(
+        "[Sentinel AI] Se detectó una misión anterior activa. "
+            .. "Realizando limpieza preventiva."
+    )
+
+    MissionManager.EndMission(
+        "Nueva misión aceptada"
+    )
+
+    -- EndMission limpia CurrentDispatch.
+    -- Restauramos el despacho que estamos aceptando.
+    PlayerData.CurrentDispatch = incident
+
+    if type(GetCurrentCase) == "function"
+        and GetCurrentCase()
+        and type(CancelCurrentCase) == "function" then
+
+        CancelCurrentCase()
+    end
 end
 
 local function acceptDispatch()
@@ -208,9 +347,29 @@ local function acceptDispatch()
     if not incident
         or not incident.location then
 
+        Sentinel.Notify(
+            "ERROR",
+            "No existe un despacho válido para aceptar.",
+            {255, 80, 80}
+        )
+
         return false
     end
 
+    -- Solo actúa si una misión anterior quedó colgada.
+    cleanupStaleMission(incident)
+
+    if type(CreateCurrentCase) ~= "function" then
+        Sentinel.Notify(
+            "ERROR",
+            "El sistema de expedientes no está disponible.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    -- Primero se crea correctamente el expediente.
     if not CreateCurrentCase(incident) then
         Sentinel.Notify(
             "ERROR",
@@ -221,11 +380,17 @@ local function acceptDispatch()
         return false
     end
 
-    PlayerData.DispatchState =
-        "EN_ROUTE"
+    -- Después se inicia oficialmente el ciclo de misión.
+    if MissionManager
+        and type(MissionManager.StartMission) == "function" then
 
-    scenePrepared = false
-    sceneSpawned = false
+        MissionManager.StartMission()
+    end
+
+    PlayerData.CurrentDispatch = incident
+    PlayerData.DispatchState = "EN_ROUTE"
+
+    resetSceneRuntime()
 
     createDispatchBlip(incident)
     prepareScene(incident)
@@ -236,19 +401,42 @@ local function acceptDispatch()
         {0, 255, 120}
     )
 
+    local currentCase =
+        type(GetCurrentCase) == "function"
+        and GetCurrentCase()
+        or nil
+
+    if currentCase then
+        print(
+            (
+                "[Sentinel AI] Expediente #%04d activo | "
+                .. "Código %s | Ubicación %d"
+            ):format(
+                tonumber(currentCase.id) or 0,
+                tostring(incident.code or "000"),
+                tonumber(incident.locationIndex) or 1
+            )
+        )
+    end
+
     return true
 end
 
+-- =========================================================
+-- FINALIZAR DESPACHO
+-- =========================================================
+
 function CompleteCurrentDispatch()
-    if PlayerData.DispatchState ~= "REPORT" then
+    if not PlayerData
+        or PlayerData.DispatchState ~= "REPORT" then
+
         return false
     end
 
     resetDispatch()
 
     if PlayerData.OnDuty then
-        PlayerData.DispatchState =
-            "WAITING"
+        PlayerData.DispatchState = "WAITING"
 
         nextDispatchAt =
             GetGameTimer() + dispatchDelay
@@ -259,135 +447,196 @@ function CompleteCurrentDispatch()
             {0, 255, 120}
         )
     else
-        PlayerData.DispatchState =
-            "OFF_DUTY"
+        PlayerData.DispatchState = "OFF_DUTY"
+    end
+
+    -- La misión ya terminó correctamente.
+    -- No llamamos aquí a EndMission porque podría borrar
+    -- el expediente antes de que BodyCam/Procedure lo adjunten.
+    if MissionManager then
+        MissionManager.Active = false
+        MissionManager.StartedAt = 0
     end
 
     return true
 end
 
+-- =========================================================
+-- CONTROL DE SERVICIO Y GENERACIÓN DE LLAMADAS
+-- =========================================================
+
 CreateThread(function()
     while true do
         Wait(250)
 
-        if PlayerData.DispatchState
-            == "OFF_DUTY" then
+        if not PlayerData then
+            goto continue
+        end
 
+        if PlayerData.DispatchState == "OFF_DUTY" then
             resetDispatch()
 
-            if GetCurrentCase
-                and GetCurrentCase() then
+            if type(GetCurrentCase) == "function"
+                and GetCurrentCase()
+                and type(CancelCurrentCase) == "function" then
 
                 CancelCurrentCase()
             end
 
-        elseif PlayerData.DispatchState
-            == "WAITING" then
-
+        elseif PlayerData.DispatchState == "WAITING" then
             if not nextDispatchAt then
                 nextDispatchAt =
-                    GetGameTimer()
-                    + dispatchDelay
+                    GetGameTimer() + dispatchDelay
             end
 
-            if GetGameTimer()
-                >= nextDispatchAt then
-
+            if GetGameTimer() >= nextDispatchAt then
                 nextDispatchAt = nil
                 sendRandomDispatch()
             end
+
         else
             nextDispatchAt = nil
         end
+
+        ::continue::
     end
 end)
+
+-- =========================================================
+-- TECLA Y PARA ACEPTAR
+-- =========================================================
 
 CreateThread(function()
     while true do
         Wait(0)
 
-        if PlayerData.DispatchState
-                == "PENDING"
-            and IsControlJustPressed(
-                0,
-                246
-            ) then
+        if PlayerData
+            and PlayerData.DispatchState == "PENDING"
+            and IsControlJustPressed(0, 246) then
 
             acceptDispatch()
         end
     end
 end)
 
+-- =========================================================
+-- APROXIMACIÓN Y ACTIVACIÓN DE ESCENA
+-- =========================================================
+
 CreateThread(function()
     while true do
         Wait(250)
 
-        if PlayerData.DispatchState
-                == "EN_ROUTE"
-            and PlayerData.CurrentDispatch then
+        if not PlayerData
+            or PlayerData.DispatchState ~= "EN_ROUTE"
+            or not PlayerData.CurrentDispatch
+            or not PlayerData.CurrentDispatch.location then
 
-            local playerCoords =
-                GetEntityCoords(
-                    PlayerPedId()
-                )
+            goto continue
+        end
 
-            local incidentCoords =
-                PlayerData.CurrentDispatch.location
+        local incident =
+            PlayerData.CurrentDispatch
 
-            local distance =
-                #(playerCoords - incidentCoords)
+        local playerCoords =
+            GetEntityCoords(PlayerPedId())
 
-            if distance <= 180.0
-                and not scenePrepared then
+        local incidentCoords =
+            incident.location
 
-                prepareScene(
-                    PlayerData.CurrentDispatch
-                )
-            end
+        local distance =
+            #(playerCoords - incidentCoords)
 
-            if distance <= 150.0
-                and scenePrepared
-                and not sceneSpawned then
+        -- Reintento controlado. Gracias a scenePreparing,
+        -- nunca se ejecutan varios SceneBuilder al mismo tiempo.
+        if distance <= 180.0
+            and not scenePrepared
+            and not scenePreparing then
 
+            prepareScene(incident)
+        end
+
+        if distance <= 150.0
+            and scenePrepared
+            and not sceneSpawned then
+
+            if type(SpawnCrimeScene) == "function" then
                 sceneSpawned =
                     SpawnCrimeScene(
-                        PlayerData.CurrentDispatch,
+                        incident,
                         true
                     ) ~= false
-            end
-
-            if distance <= 25.0 then
-                removeDispatchBlip()
-
-                PlayerData.DispatchState =
-                    "ON_SCENE"
-
-                if not sceneSpawned then
-                    if not scenePrepared then
-                        SceneBuilder.Build(
-                            PlayerData.CurrentDispatch
-                        )
-
-                        scenePrepared = true
-                    end
-
-                    sceneSpawned =
-                        SpawnCrimeScene(
-                            PlayerData.CurrentDispatch,
-                            false
-                        ) ~= false
-                end
-
-                if ActivateCrimeScene then
-                    ActivateCrimeScene()
-                end
-
-                Sentinel.Notify(
-                    "CENTRAL",
-                    "Unidad en escena. Evalúe la situación.",
-                    {0, 255, 0}
+            else
+                print(
+                    "[Sentinel AI] ERROR: SpawnCrimeScene no está disponible."
                 )
             end
         end
+
+        if distance <= 25.0 then
+            removeDispatchBlip()
+
+            PlayerData.DispatchState =
+                "ON_SCENE"
+
+            if not sceneSpawned then
+                if not scenePrepared then
+                    if SceneBuilder
+                        and type(SceneBuilder.Build) == "function" then
+
+                        local success, layout =
+                            pcall(
+                                SceneBuilder.Build,
+                                incident
+                            )
+
+                        scenePreparing = false
+                        scenePrepared =
+                            success and layout ~= nil
+
+                        if not success then
+                            print(
+                                "[Sentinel AI] ERROR preparando "
+                                    .. "escena al llegar: "
+                                    .. tostring(layout)
+                            )
+                        end
+                    end
+                end
+
+                if type(SpawnCrimeScene) == "function" then
+                    sceneSpawned =
+                        SpawnCrimeScene(
+                            incident,
+                            false
+                        ) ~= false
+                end
+            end
+
+            if type(ActivateCrimeScene) == "function" then
+                ActivateCrimeScene()
+            end
+
+            Sentinel.Notify(
+                "CENTRAL",
+                "Unidad en escena. Evalúe la situación.",
+                {0, 255, 0}
+            )
+        end
+
+        ::continue::
     end
 end)
+
+AddEventHandler(
+    "onResourceStop",
+    function(resourceName)
+        if resourceName ~= GetCurrentResourceName() then
+            return
+        end
+
+        resetDispatch()
+    end
+)
+
+print("[Sentinel AI] DispatchManager listo.")

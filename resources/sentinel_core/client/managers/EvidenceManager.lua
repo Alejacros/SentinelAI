@@ -5,8 +5,6 @@ EvidenceManager = {
     Locked = false
 }
 
-local EVIDENCE_GROUP = "active_evidence"
-
 local evidenceTypes = {
     {
         name = "Billetera",
@@ -50,15 +48,21 @@ local function loadModel(model)
         Wait(50)
 
         if GetGameTimer() >= timeout then
-            print(
-                "[Sentinel AI] Timeout cargando evidencia."
-            )
-
             return false
         end
     end
 
     return true
+end
+
+local function horizontalDistance(first, second)
+    local deltaX = first.x - second.x
+    local deltaY = first.y - second.y
+
+    return math.sqrt(
+        deltaX * deltaX
+        + deltaY * deltaY
+    )
 end
 
 local function findSpawnPosition()
@@ -78,7 +82,7 @@ local function findSpawnPosition()
         position.z
     )
 
-    for height = 5.0, 50.0, 5.0 do
+    for height = 5.0, 60.0, 5.0 do
         local foundGround, groundZ =
             GetGroundZFor_3dCoord(
                 position.x,
@@ -91,7 +95,7 @@ local function findSpawnPosition()
             return vector3(
                 position.x,
                 position.y,
-                groundZ + 0.03
+                groundZ + 0.08
             )
         end
     end
@@ -107,31 +111,26 @@ local function findSpawnPosition()
 end
 
 function EvidenceManager.Remove()
-    if EvidenceManager.Active then
-        if EvidenceManager.Active.blip
-            and DoesBlipExist(
-                EvidenceManager.Active.blip
-            ) then
+    local evidence =
+        EvidenceManager.Active
 
-            RemoveBlip(
-                EvidenceManager.Active.blip
-            )
+    if evidence then
+        if evidence.blip
+            and DoesBlipExist(evidence.blip) then
+
+            RemoveBlip(evidence.blip)
         end
 
-        if EvidenceManager.Active.object
-            and DoesEntityExist(
-                EvidenceManager.Active.object
-            ) then
+        if evidence.object
+            and DoesEntityExist(evidence.object) then
 
             SetEntityAsMissionEntity(
-                EvidenceManager.Active.object,
+                evidence.object,
                 true,
                 true
             )
 
-            DeleteEntity(
-                EvidenceManager.Active.object
-            )
+            DeleteEntity(evidence.object)
         end
     end
 
@@ -182,11 +181,6 @@ function EvidenceManager.Spawn()
             {255, 80, 80}
         )
 
-        print(
-            "[Sentinel AI] CreateObject falló para "
-                .. evidenceData.model
-        )
-
         return false
     end
 
@@ -202,16 +196,15 @@ function EvidenceManager.Spawn()
     local finalCoords =
         GetEntityCoords(object)
 
-    local blip =
-        AddBlipForCoord(
-            finalCoords.x,
-            finalCoords.y,
-            finalCoords.z
-        )
+    local blip = AddBlipForCoord(
+        finalCoords.x,
+        finalCoords.y,
+        finalCoords.z
+    )
 
     SetBlipSprite(blip, 1)
     SetBlipColour(blip, 3)
-    SetBlipScale(blip, 0.8)
+    SetBlipScale(blip, 0.85)
     SetBlipAsShortRange(blip, false)
 
     BeginTextCommandSetBlipName("STRING")
@@ -224,8 +217,10 @@ function EvidenceManager.Spawn()
         name = evidenceData.name
     }
 
+    EvidenceManager.Locked = false
+
     notify(
-        "Evidencia localizada delante de usted."
+        "Evidencia localizada. Acérquese al marcador azul."
     )
 
     print(
@@ -242,7 +237,7 @@ function EvidenceManager.Spawn()
     return true
 end
 
--- Compatibilidad temporal con InteractionManager.
+-- Compatibilidad con InteractionManager.
 function SpawnEvidence()
     return EvidenceManager.Spawn()
 end
@@ -251,28 +246,39 @@ function RemoveActiveEvidence()
     EvidenceManager.Remove()
 end
 
-local function finishCase()
+local function completeCaseWithoutCustody()
     local earnedXP = 25
 
     PlayerData.DispatchState = "REPORT"
 
     EvidenceManager.Remove()
-    CleanupCrimeScene()
 
-    AwardXP(earnedXP)
-    CompleteCase(earnedXP)
-    CompleteCurrentDispatch()
+    if type(CleanupCrimeScene) == "function" then
+        CleanupCrimeScene()
+    end
+
+    if type(AwardXP) == "function" then
+        AwardXP(earnedXP)
+    end
+
+    if type(CompleteCase) == "function" then
+        CompleteCase(earnedXP)
+    end
+
+    if type(CompleteCurrentDispatch) == "function" then
+        CompleteCurrentDispatch()
+    end
 end
 
-local function continueAfterEvidence()
-    if IsSuspectArrested
+local function continueAfterCollection()
+    if type(IsSuspectArrested) == "function"
         and IsSuspectArrested()
-        and StartCustodyTransport then
+        and type(StartCustodyTransport) == "function" then
 
-        local custodyStarted =
+        local started =
             StartCustodyTransport()
 
-        if custodyStarted then
+        if started then
             Sentinel.Notify(
                 "CENTRAL",
                 "Evidencia asegurada. Traslade al detenido.",
@@ -283,35 +289,90 @@ local function continueAfterEvidence()
         end
     end
 
-    finishCase()
+    completeCaseWithoutCustody()
+end
+
+local function collectEvidence()
+    if EvidenceManager.Locked then
+        return
+    end
+
+    local evidence =
+        EvidenceManager.Active
+
+    if not evidence
+        or not evidence.object
+        or not DoesEntityExist(evidence.object) then
+
+        return
+    end
+
+    EvidenceManager.Locked = true
+
+    local evidenceName =
+        evidence.name or "Evidencia"
+
+    if type(AddEvidenceToCurrentCase) ~= "function"
+        or not AddEvidenceToCurrentCase(evidenceName) then
+
+        notify(
+            "No existe un expediente activo.",
+            {255, 80, 80}
+        )
+
+        EvidenceManager.Locked = false
+        return
+    end
+
+    if BodyCamManager
+        and type(BodyCamManager.Log) == "function" then
+
+        BodyCamManager.Log(
+            "Evidencia asegurada: "
+                .. evidenceName .. ".",
+            "INVESTIGATION"
+        )
+    end
+
+    notify(
+        evidenceName
+            .. " recogido correctamente.",
+        {80, 220, 140}
+    )
+
+    print(
+        "[Sentinel AI] Evidencia recogida: "
+            .. evidenceName
+    )
+
+    EvidenceManager.Remove()
+    continueAfterCollection()
 end
 
 CreateThread(function()
     while true do
         local sleep = 500
+
         local evidence =
             EvidenceManager.Active
 
         if evidence
             and evidence.object
-            and DoesEntityExist(
-                evidence.object
-            ) then
+            and DoesEntityExist(evidence.object) then
 
             local objectCoords =
-                GetEntityCoords(
-                    evidence.object
-                )
+                GetEntityCoords(evidence.object)
 
             local playerCoords =
-                GetEntityCoords(
-                    PlayerPedId()
-                )
+                GetEntityCoords(PlayerPedId())
 
             local distance =
-                #(playerCoords - objectCoords)
+                horizontalDistance(
+                    playerCoords,
+                    objectCoords
+                )
 
-            if distance <= 80.0 then
+            if distance <= 100.0 then
                 sleep = 0
 
                 DrawMarker(
@@ -319,10 +380,19 @@ CreateThread(function()
                     objectCoords.x,
                     objectCoords.y,
                     objectCoords.z + 0.75,
-                    0.0, 0.0, 0.0,
-                    0.0, 180.0, 0.0,
-                    0.45, 0.45, 0.45,
-                    0, 220, 255, 255,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    180.0,
+                    0.0,
+                    0.50,
+                    0.50,
+                    0.50,
+                    0,
+                    220,
+                    255,
+                    255,
                     false,
                     true,
                     2,
@@ -332,7 +402,9 @@ CreateThread(function()
                     false
                 )
 
-                if distance <= 2.0 then
+                -- Usamos distancia horizontal para que el objeto
+                -- hundido o elevado unos centímetros no bloquee la E.
+                if distance <= 3.0 then
                     BeginTextCommandDisplayHelp(
                         "STRING"
                     )
@@ -348,34 +420,8 @@ CreateThread(function()
                         -1
                     )
 
-                    if IsControlJustPressed(0, 38)
-                        and not EvidenceManager.Locked then
-
-                        EvidenceManager.Locked = true
-
-                        local evidenceName =
-                            evidence.name
-
-                        if not AddEvidenceToCurrentCase(
-                            evidenceName
-                        ) then
-
-                            notify(
-                                "No existe un expediente activo.",
-                                {255, 80, 80}
-                            )
-
-                            EvidenceManager.Locked = false
-                            return
-                        end
-
-                        notify(
-                            evidenceName
-                                .. " recogido correctamente."
-                        )
-
-                        EvidenceManager.Remove()
-                        continueAfterEvidence()
+                    if IsControlJustPressed(0, 38) then
+                        collectEvidence()
                     end
                 end
             end
@@ -384,6 +430,50 @@ CreateThread(function()
         Wait(sleep)
     end
 end)
+
+RegisterCommand(
+    "collectevidence",
+    function()
+        local evidence =
+            EvidenceManager.Active
+
+        if not evidence
+            or not evidence.object
+            or not DoesEntityExist(evidence.object) then
+
+            notify(
+                "No existe evidencia activa.",
+                {255, 180, 0}
+            )
+
+            return
+        end
+
+        local playerCoords =
+            GetEntityCoords(PlayerPedId())
+
+        local objectCoords =
+            GetEntityCoords(evidence.object)
+
+        local distance =
+            horizontalDistance(
+                playerCoords,
+                objectCoords
+            )
+
+        if distance > 5.0 then
+            notify(
+                "Debe acercarse más a la evidencia.",
+                {255, 180, 0}
+            )
+
+            return
+        end
+
+        collectEvidence()
+    end,
+    false
+)
 
 AddEventHandler(
     "onResourceStop",
