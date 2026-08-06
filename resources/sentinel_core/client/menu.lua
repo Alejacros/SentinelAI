@@ -1,5 +1,4 @@
 local menuVisible = false
-local onDuty = false
 
 local function drawText(text, x, y, scale)
     SetTextFont(4)
@@ -13,16 +12,6 @@ local function drawText(text, x, y, scale)
 end
 
 CreateThread(function()
-    Wait(3000)
-
-    TriggerEvent("chat:addMessage", {
-        color = {0, 170, 255},
-        args = {
-            "Sentinel AI",
-            "Bienvenida. Pulsa F1 para abrir Sentinel."
-        }
-    })
-
     while true do
         Wait(0)
 
@@ -35,33 +24,37 @@ CreateThread(function()
 
             drawText("SENTINEL AI", 0.5, 0.245, 0.55)
 
-            if onDuty then
+            if PlayerData.OnDuty then
                 drawText("ESTADO: EN SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Finalizar turno", 0.5, 0.375, 0.34)
+                drawText("[E] Finalizar patrulla", 0.5, 0.375, 0.34)
             else
                 drawText("ESTADO: FUERA DE SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Iniciar turno", 0.5, 0.375, 0.34)
+                drawText("[E] Iniciar patrulla", 0.5, 0.375, 0.34)
             end
 
             drawText("[ESC] Cerrar", 0.5, 0.425, 0.30)
 
             if IsControlJustPressed(0, 38) then -- E
-                onDuty = not onDuty
+                PlayerData.OnDuty = not PlayerData.OnDuty
 
-                if onDuty then
+                if PlayerData.OnDuty then
+                    AssignRandomUnit()
+
                     TriggerEvent("chat:addMessage", {
                         color = {0, 255, 120},
                         args = {
-                            "Sentinel AI",
-                            "Turno iniciado. Estás en servicio."
+                            "CENTRAL",
+                            "Unidad " .. PlayerData.Unit .. " asignada. Permanezca atento."
                         }
                     })
                 else
+                    PlayerData.Unit = nil
+
                     TriggerEvent("chat:addMessage", {
                         color = {255, 180, 0},
                         args = {
-                            "Sentinel AI",
-                            "Turno finalizado. Estás fuera de servicio."
+                            "CENTRAL",
+                            "Patrulla finalizada."
                         }
                     })
                 end

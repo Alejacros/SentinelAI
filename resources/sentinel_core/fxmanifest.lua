@@ -6,9 +6,25 @@ description 'Sentinel AI Core'
 version '0.1.0-alpha'
 
 client_scripts {
-    'client.lua'
+
+    'config.lua',
+
+    'client/player.lua',
+
+    'client/main.lua',
+
+    'client/menu.lua'
+
 }
 
 server_scripts {
     'server.lua'
 }
+
+dependencies {
+    'chat'
+}
+
+
+
+
