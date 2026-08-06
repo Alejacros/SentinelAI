@@ -6,11 +6,18 @@ description 'Sentinel AI Core'
 version '0.1.0-alpha'
 
 client_scripts {
+
     'config.lua',
-    'client/player.lua',
+
     'client/main.lua',
-    'client/menu.lua',
-    'client/hud.lua'
+
+    'client/managers/PlayerManager.lua',
+    'client/managers/MenuManager.lua',
+    'client/managers/HUDManager.lua',
+    'client/managers/VehicleManager.lua',
+    'client/managers/SceneManager.lua',
+    'client/managers/DispatchManager.lua'
+
 }
 
 server_scripts {

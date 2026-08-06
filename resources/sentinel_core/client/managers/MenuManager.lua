@@ -25,12 +25,35 @@ CreateThread(function()
             drawText("SENTINEL AI", 0.5, 0.245, 0.55)
 
             if PlayerData.OnDuty then
-                drawText("ESTADO: EN SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Finalizar patrulla", 0.5, 0.375, 0.34)
-            else
-                drawText("ESTADO: FUERA DE SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Iniciar patrulla", 0.5, 0.375, 0.34)
-            end
+
+    PlayerData.DispatchState = "WAITING"
+
+    AssignRandomUnit()
+    SpawnPoliceVehicle()
+
+    TriggerEvent("chat:addMessage", {
+        color = {0, 255, 120},
+        args = {
+            "CENTRAL",
+            "Unidad " .. PlayerData.Unit .. " asignada. Permanezca atento."
+        }
+    })
+
+else
+
+    PlayerData.DispatchState = "OFF_DUTY"
+
+    PlayerData.Unit = nil
+
+    TriggerEvent("chat:addMessage", {
+        color = {255, 180, 0},
+        args = {
+            "CENTRAL",
+            "Patrulla finalizada."
+        }
+    })
+
+end
 
             drawText("[ESC] Cerrar", 0.5, 0.425, 0.30)
 
@@ -39,6 +62,7 @@ CreateThread(function()
 
                 if PlayerData.OnDuty then
                     AssignRandomUnit()
+                    SpawnPoliceVehicle()
 
                     TriggerEvent("chat:addMessage", {
                         color = {0, 255, 120},

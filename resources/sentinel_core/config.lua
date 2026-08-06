@@ -11,3 +11,16 @@ Config.Units = {
     "VICTOR-04",
     "DELTA-15"
 }
+
+Config.Dispatch = {}
+
+Config.Dispatch.Location = vector3(28.2, -1339.1, 29.5)
+
+Config.PoliceVehicle = "police"
+
+Config.Scene = {}
+
+Config.Scene.NPC = {
+    model = "a_m_m_business_01",
+    coords = vector4(28.2, -1339.1, 29.5, 180.0)
+}

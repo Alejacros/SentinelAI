@@ -4,7 +4,13 @@ PlayerData = {
 
     Unit = nil,
 
-    Rank = "Cadete"
+    Rank = "Cadete",
+
+    Vehicle = nil,
+
+    SceneNPC = nil,
+
+    DispatchState = "OFF_DUTY"
 
 }
 
@@ -15,3 +21,6 @@ function AssignRandomUnit()
     PlayerData.Unit = Config.Units[randomIndex]
 
 end
+
+PlayerData.Vehicle = nil
+PlayerData.SceneNPC = nil
