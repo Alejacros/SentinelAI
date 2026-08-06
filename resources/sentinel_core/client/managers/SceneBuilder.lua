@@ -28,6 +28,40 @@ function SceneBuilder.Build(dispatch)
     local center = dispatch.location
     local occupied = {}
 
+    local incidentTemplate = nil
+
+if type(GetIncidentTemplate) == "function" then
+    incidentTemplate =
+        GetIncidentTemplate(
+            dispatch.type
+        )
+end
+
+if incidentTemplate then
+    print(
+        (
+            "[SceneBuilder] Plantilla seleccionada: "
+            .. "%s | %s | Dificultad %d"
+        ):format(
+            tostring(
+                incidentTemplate.id
+            ),
+            tostring(
+                incidentTemplate.label
+            ),
+            tonumber(
+                incidentTemplate.difficulty
+            ) or 1
+        )
+    )
+else
+    print(
+        "[SceneBuilder] No existe plantilla para "
+            .. tostring(dispatch.type)
+            .. ". Se usará la escena estándar."
+    )
+end
+
     SpawnPointManager.PreloadArea(
         center,
         1200
@@ -82,6 +116,7 @@ function SceneBuilder.Build(dispatch)
 
     SceneBuilder.Layout = {
         center = center,
+        template = incidentTemplate,
 
         witness = {
             position = witnessPosition,

@@ -19,6 +19,7 @@ client_scripts {
     'client/data/Dispatches.lua',
     'client/data/Scenarios.lua',
     'client/data/BehaviorProfiles.lua',
+    'client/data/IncidentTemplates.lua',
 
     'client/bootstrap.lua',
 
@@ -58,6 +59,7 @@ client_scripts {
     'client/managers/InteractionManager.lua',
     'client/managers/MDTManager.lua',
     'client/managers/CaseReviewManager.lua',
+
     'client/managers/ActionDirector.lua',
     'client/directors/RobberyDirector.lua'
 }

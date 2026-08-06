@@ -177,6 +177,39 @@ local function weightedChoice(options)
     return options[#options]
 end
 
+local function getPreparedTemplate()
+    if not SceneBuilder
+        or type(SceneBuilder.GetLayout) ~= "function" then
+
+        return nil
+    end
+
+    local layout =
+        SceneBuilder.GetLayout()
+
+    if type(layout) ~= "table"
+        or type(layout.template) ~= "table" then
+
+        return nil
+    end
+
+    return layout.template
+end
+
+local function logSelectedTemplate(
+    dispatchType,
+    templateId
+)
+    print(
+        (
+            "[IncidentVariantManager] %s -> plantilla %s"
+        ):format(
+            tostring(dispatchType),
+            tostring(templateId or "FALLBACK")
+        )
+    )
+end
+
 -- =========================================================
 -- ROBOS
 -- =========================================================
@@ -399,33 +432,74 @@ local function robberySuspectsGone()
 end
 
 local function startRobberyVariant(dispatch)
-    local variant = weightedChoice({
-        {
-            id = "ARMED_WITH_VICTIM",
-            weight = 32,
-            start = robberyArmedSuspect
-        },
-        {
-            id = "FLEEING",
-            weight = 30,
-            start = robberyFleeingSuspect
-        },
-        {
-            id = "GETAWAY_DRIVER",
-            weight = 23,
-            start = robberyGetawayDriver
-        },
-        {
-            id = "SUSPECTS_GONE",
-            weight = 15,
-            start = robberySuspectsGone
-        }
-    })
+    local template =
+        getPreparedTemplate()
+
+    local templateId =
+        template and template.id or nil
+
+    local handlers = {
+        STORE_ESCAPE =
+            robberyFleeingSuspect,
+
+        ARMED_WITH_VICTIM =
+            robberyArmedSuspect,
+
+        GETAWAY_DRIVER =
+            robberyGetawayDriver,
+
+        SUSPECTS_GONE =
+            robberySuspectsGone,
+
+        -- Compatibilidad temporal:
+        -- todavía usamos un solo sospechoso principal.
+        TWO_SUSPECTS =
+            robberyArmedSuspect
+    }
+
+    local handler =
+        templateId
+        and handlers[templateId]
+        or nil
+
+    if not handler then
+        local fallback =
+            weightedChoice({
+                {
+                    id = "ARMED_WITH_VICTIM",
+                    weight = 32,
+                    start = robberyArmedSuspect
+                },
+                {
+                    id = "STORE_ESCAPE",
+                    weight = 30,
+                    start = robberyFleeingSuspect
+                },
+                {
+                    id = "GETAWAY_DRIVER",
+                    weight = 23,
+                    start = robberyGetawayDriver
+                },
+                {
+                    id = "SUSPECTS_GONE",
+                    weight = 15,
+                    start = robberySuspectsGone
+                }
+            })
+
+        templateId = fallback.id
+        handler = fallback.start
+    end
 
     IncidentVariantManager.ActiveVariant =
-        variant.id
+        templateId
 
-    variant.start(dispatch)
+    logSelectedTemplate(
+        dispatch.type,
+        templateId
+    )
+
+    handler(dispatch)
 end
 
 -- =========================================================
@@ -672,28 +746,61 @@ local function disturbanceCrowd(dispatch)
 end
 
 local function startDisturbanceVariant(dispatch)
-    local variant = weightedChoice({
-        {
-            id = "FIGHT",
-            weight = 45,
-            start = disturbanceFight
-        },
-        {
-            id = "KNIFE_THREAT",
-            weight = 30,
-            start = disturbanceKnifeThreat
-        },
-        {
-            id = "CROWD_ARGUMENT",
-            weight = 25,
-            start = disturbanceCrowd
-        }
-    })
+    local template =
+        getPreparedTemplate()
+
+    local templateId =
+        template and template.id or nil
+
+    local handlers = {
+        STREET_FIGHT =
+            disturbanceFight,
+
+        KNIFE_THREAT =
+            disturbanceKnifeThreat,
+
+        CROWD_ARGUMENT =
+            disturbanceCrowd
+    }
+
+    local handler =
+        templateId
+        and handlers[templateId]
+        or nil
+
+    if not handler then
+        local fallback =
+            weightedChoice({
+                {
+                    id = "STREET_FIGHT",
+                    weight = 40,
+                    start = disturbanceFight
+                },
+                {
+                    id = "KNIFE_THREAT",
+                    weight = 30,
+                    start = disturbanceKnifeThreat
+                },
+                {
+                    id = "CROWD_ARGUMENT",
+                    weight = 30,
+                    start = disturbanceCrowd
+                }
+            })
+
+        templateId = fallback.id
+        handler = fallback.start
+    end
 
     IncidentVariantManager.ActiveVariant =
-        variant.id
+        templateId
 
-    variant.start(dispatch)
+    logSelectedTemplate(
+        dispatch.type,
+        templateId
+    )
+
+    handler(dispatch)
 end
 
 -- =========================================================
@@ -883,29 +990,62 @@ local function accidentMinorCollision(dispatch)
 end
 
 local function startAccidentVariant(dispatch)
-    local variant = weightedChoice({
-        {
-            id = "MEDICAL_RESPONSE",
-            weight = 45,
-            start = accidentMedicalResponse
-        },
-        {
-            id = "DRUNK_DRIVER",
-            weight = 30,
-            start = accidentDrunkDriver
-        },
-        {
-            id = "MINOR_COLLISION",
-            weight = 25,
-            start = accidentMinorCollision
-        }
-    })
+    local template =
+        getPreparedTemplate()
+
+    local templateId =
+        template and template.id or nil
+
+    local handlers = {
+        MINOR_COLLISION =
+            accidentMinorCollision,
+
+        INJURED_DRIVER =
+            accidentMedicalResponse,
+
+        DRUNK_DRIVER =
+            accidentDrunkDriver
+    }
+
+    local handler =
+        templateId
+        and handlers[templateId]
+        or nil
+
+    if not handler then
+        local fallback =
+            weightedChoice({
+                {
+                    id = "INJURED_DRIVER",
+                    weight = 40,
+                    start = accidentMedicalResponse
+                },
+                {
+                    id = "DRUNK_DRIVER",
+                    weight = 25,
+                    start = accidentDrunkDriver
+                },
+                {
+                    id = "MINOR_COLLISION",
+                    weight = 35,
+                    start = accidentMinorCollision
+                }
+            })
+
+        templateId = fallback.id
+        handler = fallback.start
+    end
 
     IncidentVariantManager.ActiveVariant =
-        variant.id
+        templateId
 
-    variant.start(dispatch)
-end
+    logSelectedTemplate(
+        dispatch.type,
+        templateId
+    )
+
+    handler(dispatch)
+end 
 
 -- =========================================================
 -- API
