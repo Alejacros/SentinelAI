@@ -37,20 +37,30 @@ end
 local function registerDirectorSuspect()
     if not SceneDirector
         or not SceneDirector.Suspect
-        or not DoesEntityExist(SceneDirector.Suspect) then
+        or not DoesEntityExist(
+            SceneDirector.Suspect
+        ) then
 
         return
     end
 
-    if SuspectSystem.Entity == SceneDirector.Suspect then
+    if SuspectSystem.Entity
+        == SceneDirector.Suspect then
+
         return
     end
 
-    SuspectSystem.Entity = SceneDirector.Suspect
-    SuspectSystem.PreviousDirectorState = SceneDirector.State
+    SuspectSystem.Entity =
+        SceneDirector.Suspect
+
+    SuspectSystem.PreviousDirectorState =
+        SceneDirector.State
+
     SuspectSystem.OutcomeRecorded = false
 
-    if SceneDirector.State == "SUSPECT_FLEEING" then
+    if SceneDirector.State
+        == "SUSPECT_FLEEING" then
+
         SuspectSystem.State = "FLEEING"
     else
         SuspectSystem.State = "HOSTILE"
@@ -85,12 +95,14 @@ local function surrenderSuspect()
         true
     )
 
-    SceneDirector.State = "SUSPECT_SURRENDERED"
+    SceneDirector.State =
+        "SUSPECT_SURRENDERED"
+
     SceneDirector.Objective =
         "El sospechoso se rindió. Acérquese y espóselo."
 
     notify(
-        "El sospechoso se rindió. Proceda con la detención.",
+        "El sospechoso se rindió. Acérquese y pulse E.",
         {80, 220, 140}
     )
 end
@@ -115,12 +127,17 @@ local function resistArrest()
         true
     )
 
-    SetPedAccuracy(suspect, 16)
+    SetPedAccuracy(suspect, 12)
     SetPedCombatAbility(suspect, 1)
-    SetPedCombatMovement(suspect, 2)
-    SetBlockingOfNonTemporaryEvents(suspect, true)
+    SetPedCombatMovement(suspect, 1)
+    SetBlockingOfNonTemporaryEvents(
+        suspect,
+        true
+    )
 
-    SceneDirector.State = "ACTIVE_THREAT"
+    SceneDirector.State =
+        "ACTIVE_THREAT"
+
     SceneDirector.Objective =
         "El sospechoso se resiste. Controle la amenaza."
 
@@ -144,9 +161,11 @@ local function orderSurrender()
         return
     end
 
-    SuspectSystem.LastOrderAt = now + 2500
+    SuspectSystem.LastOrderAt =
+        now + 2000
 
-    local suspect = SuspectSystem.Entity
+    local suspect =
+        SuspectSystem.Entity
 
     if not suspect
         or not DoesEntityExist(suspect)
@@ -157,13 +176,15 @@ local function orderSurrender()
 
     ClearPedTasksImmediately(suspect)
 
-    local surrenderChance = 60
+    local surrenderChance = 85
 
     if SuspectSystem.State == "FLEEING" then
-        surrenderChance = 45
+        surrenderChance = 75
     end
 
-    if math.random(1, 100) <= surrenderChance then
+    if math.random(1, 100)
+        <= surrenderChance then
+
         surrenderSuspect()
     else
         resistArrest()
@@ -172,7 +193,9 @@ end
 
 function GetActiveSuspect()
     if SuspectSystem.Entity
-        and DoesEntityExist(SuspectSystem.Entity) then
+        and DoesEntityExist(
+            SuspectSystem.Entity
+        ) then
 
         return SuspectSystem.Entity
     end
@@ -181,7 +204,17 @@ function GetActiveSuspect()
 end
 
 function IsSuspectSurrendered()
-    return SuspectSystem.State == "SURRENDERED"
+    return SuspectSystem.State
+        == "SURRENDERED"
+end
+
+function IsSuspectArrested()
+    return SuspectSystem.State
+        == "ARRESTED"
+end
+
+function GetSuspectState()
+    return SuspectSystem.State
 end
 
 function MarkSuspectArrested()
@@ -211,11 +244,17 @@ CreateThread(function()
 
         if suspect then
             if IsEntityDead(suspect)
-                and SuspectSystem.State ~= "NEUTRALIZED"
-                and SuspectSystem.State ~= "ARRESTED" then
+                and SuspectSystem.State
+                    ~= "NEUTRALIZED"
+                and SuspectSystem.State
+                    ~= "ARRESTED" then
 
-                SuspectSystem.State = "NEUTRALIZED"
-                recordOutcome("NEUTRALIZED")
+                SuspectSystem.State =
+                    "NEUTRALIZED"
+
+                recordOutcome(
+                    "NEUTRALIZED"
+                )
 
             elseif SceneDirector.State == "SAFE"
                 and SuspectSystem.State == "FLEEING"
@@ -228,7 +267,8 @@ CreateThread(function()
 
         if SceneDirector
             and SceneDirector.State == "IDLE"
-            and SuspectSystem.State ~= "NONE" then
+            and SuspectSystem.State ~= "NONE"
+            and not IsCustodyTransportActive() then
 
             resetSuspectSystem()
         end
@@ -247,17 +287,40 @@ CreateThread(function()
                 or SuspectSystem.State == "FLEEING"
             ) then
 
-            local playerCoords =
+            local distance = #(
                 GetEntityCoords(PlayerPedId())
+                - GetEntityCoords(suspect)
+            )
 
-            local suspectCoords =
-                GetEntityCoords(suspect)
-
-            local distance =
-                #(playerCoords - suspectCoords)
-
-            if distance <= 12.0 then
+            if distance <= 30.0 then
                 sleep = 0
+
+                DrawMarker(
+                    2,
+                    GetEntityCoords(suspect).x,
+                    GetEntityCoords(suspect).y,
+                    GetEntityCoords(suspect).z + 2.1,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    180.0,
+                    0.0,
+                    0.45,
+                    0.45,
+                    0.45,
+                    255,
+                    40,
+                    40,
+                    255,
+                    false,
+                    true,
+                    2,
+                    false,
+                    nil,
+                    nil,
+                    false
+                )
 
                 BeginTextCommandDisplayHelp("STRING")
 
@@ -272,7 +335,7 @@ CreateThread(function()
                     -1
                 )
 
-                if IsControlJustPressed(0, 47) then -- G
+                if IsControlJustPressed(0, 47) then
                     orderSurrender()
                 end
             end

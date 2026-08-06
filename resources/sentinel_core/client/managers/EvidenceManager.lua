@@ -16,22 +16,6 @@ local evidenceTypes = {
     }
 }
 
-local function loadModel(model)
-    RequestModel(model)
-
-    local timeout = GetGameTimer() + 5000
-
-    while not HasModelLoaded(model) do
-        Wait(50)
-
-        if GetGameTimer() >= timeout then
-            return false
-        end
-    end
-
-    return true
-end
-
 local function notify(message)
     Sentinel.Notify(
         "EVIDENCIA",
@@ -68,54 +52,72 @@ function SpawnEvidence()
     local evidenceData =
         evidenceTypes[math.random(#evidenceTypes)]
 
-    local model = GetHashKey(evidenceData.model)
+    local object = EntityManager.SpawnObject({
+        model = evidenceData.model,
+        coords = spawnPosition,
+        freeze = true,
+        placeOnGround = true,
+        group = "active_evidence"
+    })
 
-    if not loadModel(model) then
+    if not object or not DoesEntityExist(object) then
         Sentinel.Notify(
             "ERROR",
-            "No fue posible cargar la evidencia.",
+            "No fue posible generar la evidencia.",
             {255, 80, 80}
         )
 
         return false
     end
-
-    local object = CreateObject(
-        model,
-        spawnPosition.x,
-        spawnPosition.y,
-        spawnPosition.z,
-        false,
-        false,
-        false
-    )
-
-    if object == 0 or not DoesEntityExist(object) then
-        Sentinel.Notify(
-            "ERROR",
-            "No fue posible crear la evidencia.",
-            {255, 80, 80}
-        )
-
-        return false
-    end
-
-    SetEntityAsMissionEntity(object, true, true)
-    PlaceObjectOnGroundProperly(object)
-    FreezeEntityPosition(object, true)
 
     activeEvidence = {
         object = object,
         name = evidenceData.name
     }
 
-    SetModelAsNoLongerNeeded(model)
-
     notify(
         "Nueva evidencia localizada. Busque el marcador azul."
     )
 
     return true
+end
+
+function RemoveActiveEvidence()
+    EntityManager.CleanupGroup(
+        "active_evidence",
+        true
+    )
+
+    activeEvidence = nil
+    evidenceLocked = false
+end
+
+local function closeCaseWithoutCustody()
+    local earnedXP = 25
+
+    PlayerData.DispatchState = "REPORT"
+
+    RemoveActiveEvidence()
+    CleanupCrimeScene()
+
+    AwardXP(earnedXP)
+    CompleteCase(earnedXP)
+    CompleteCurrentDispatch()
+end
+
+local function continueWithCustody()
+    local started = StartCustodyTransport()
+
+    if not started then
+        closeCaseWithoutCustody()
+        return
+    end
+
+    Sentinel.Notify(
+        "CENTRAL",
+        "Evidencia asegurada. Traslade al detenido a la comisaría.",
+        {90, 190, 255}
+    )
 end
 
 CreateThread(function()
@@ -143,10 +145,19 @@ CreateThread(function()
                     objectCoords.x,
                     objectCoords.y,
                     objectCoords.z + 0.8,
-                    0.0, 0.0, 0.0,
-                    0.0, 180.0, 0.0,
-                    0.35, 0.35, 0.35,
-                    0, 220, 255, 255,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    180.0,
+                    0.0,
+                    0.35,
+                    0.35,
+                    0.35,
+                    0,
+                    220,
+                    255,
+                    255,
                     false,
                     true,
                     2,
@@ -183,35 +194,26 @@ CreateThread(function()
                                 .. " recogido correctamente."
                         )
 
-                        local evidenceAdded =
-                            AddEvidenceToCurrentCase(
-                                evidenceName
+                        if not AddEvidenceToCurrentCase(evidenceName) then
+                            Sentinel.Notify(
+                                "ERROR",
+                                "No existe un caso activo para guardar la evidencia.",
+                                {255, 80, 80}
                             )
 
-                        if not evidenceAdded then
                             evidenceLocked = false
                             return
                         end
 
-                        PlayerData.DispatchState = "REPORT"
+                        RemoveActiveEvidence()
 
-                        removeEvidence()
-                        CleanupCrimeScene()
+                        if IsSuspectArrested
+                            and IsSuspectArrested() then
 
-                        local earnedXP = 25
-
-                        local archived =
-                            CompleteCase(earnedXP)
-
-                        if not archived then
-                            evidenceLocked = false
-                            return
+                            continueWithCustody()
+                        else
+                            closeCaseWithoutCustody()
                         end
-
-                        AwardXP(earnedXP)
-                        CompleteCurrentDispatch()
-
-                        evidenceLocked = false
                     end
                 end
             end
@@ -220,3 +222,14 @@ CreateThread(function()
         Wait(sleep)
     end
 end)
+
+AddEventHandler(
+    "onResourceStop",
+    function(resourceName)
+        if resourceName ~= GetCurrentResourceName() then
+            return
+        end
+
+        RemoveActiveEvidence()
+    end
+)

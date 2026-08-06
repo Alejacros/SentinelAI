@@ -28,31 +28,24 @@ local function setSceneState(state, objective)
 end
 
 local function selectVariant(dispatchType)
-    local definitions =
-        ScenarioDefinitions[dispatchType]
+    local definitions = ScenarioDefinitions[dispatchType]
 
-    if not definitions
-        or #definitions == 0 then
-
+    if not definitions or #definitions == 0 then
         return nil
     end
 
-    return definitions[
-        math.random(#definitions)
-    ]
+    return definitions[math.random(#definitions)]
 end
 
-local function createSuspectBlip(
-    suspect,
-    name
-)
+local function createSuspectBlip(suspect, name)
     return EntityManager.CreateEntityBlip(
         suspect,
         {
             name = name,
             sprite = 84,
             colour = 1,
-            scale = 0.95,
+            scale = 1.1,
+            shortRange = false,
             group = SCENE_GROUP
         }
     )
@@ -65,8 +58,8 @@ local function spawnArmedRobbery(dispatch)
         model = "g_m_y_mexgoon_02",
 
         coords = vector3(
-            location.x + 8.0,
-            location.y + 3.0,
+            location.x + 7.0,
+            location.y + 2.0,
             location.z
         ),
 
@@ -78,7 +71,7 @@ local function spawnArmedRobbery(dispatch)
     if not suspect then
         setSceneState(
             "SAFE",
-            "No se encontró al sospechoso. Entreviste al testigo."
+            "El sospechoso escapó. Entreviste al testigo."
         )
 
         return
@@ -94,15 +87,12 @@ local function spawnArmedRobbery(dispatch)
         true
     )
 
-    SetPedAccuracy(suspect, 18)
+    SetPedAccuracy(suspect, 10)
     SetPedCombatAbility(suspect, 1)
     SetPedCombatRange(suspect, 1)
-    SetPedCombatMovement(suspect, 2)
-    SetPedFleeAttributes(
-        suspect,
-        0,
-        false
-    )
+    SetPedCombatMovement(suspect, 1)
+    SetPedFleeAttributes(suspect, 0, false)
+    SetBlockingOfNonTemporaryEvents(suspect, true)
 
     createSuspectBlip(
         suspect,
@@ -111,16 +101,15 @@ local function spawnArmedRobbery(dispatch)
 
     setSceneState(
         "ACTIVE_THREAT",
-        "Sospechoso armado localizado. Controle la amenaza."
+        "Sospechoso armado localizado. Acérquese y pulse G para ordenar rendición."
     )
 
     CreateThread(function()
-        Wait(2000)
+        Wait(6500)
 
         if DoesEntityExist(suspect)
             and not IsEntityDead(suspect)
-            and SceneDirector.State
-                == "ACTIVE_THREAT" then
+            and SceneDirector.State == "ACTIVE_THREAT" then
 
             TaskCombatPed(
                 suspect,
@@ -139,8 +128,8 @@ local function spawnFleeingRobbery(dispatch)
         model = "g_m_y_ballaeast_01",
 
         coords = vector3(
-            location.x + 8.0,
-            location.y - 3.0,
+            location.x + 7.0,
+            location.y - 2.0,
             location.z
         ),
 
@@ -167,29 +156,24 @@ local function spawnFleeingRobbery(dispatch)
 
     setSceneState(
         "SUSPECT_FLEEING",
-        "Sospechoso huyendo. Intente alcanzarlo."
+        "Sospechoso huyendo. Acérquese y pulse G para darle la orden de detenerse."
     )
 
     TaskSmartFleePed(
         suspect,
         PlayerPedId(),
-        250.0,
+        160.0,
         -1,
         false,
         false
     )
 end
 
-local function spawnRobbery(
-    dispatch,
-    variant
-)
+local function spawnRobbery(dispatch, variant)
     if variant.id == "armed_suspect" then
         spawnArmedRobbery(dispatch)
 
-    elseif variant.id
-        == "fleeing_suspect" then
-
+    elseif variant.id == "fleeing_suspect" then
         spawnFleeingRobbery(dispatch)
 
     else
@@ -203,33 +187,31 @@ end
 local function spawnActiveFight(dispatch)
     local location = dispatch.location
 
-    local personOne =
-        EntityManager.SpawnPed({
-            model = "a_m_y_hipster_01",
+    local personOne = EntityManager.SpawnPed({
+        model = "a_m_y_hipster_01",
 
-            coords = vector3(
-                location.x + 6.0,
-                location.y + 1.5,
-                location.z
-            ),
+        coords = vector3(
+            location.x + 6.0,
+            location.y + 1.5,
+            location.z
+        ),
 
-            heading = 90.0,
-            group = SCENE_GROUP
-        })
+        heading = 90.0,
+        group = SCENE_GROUP
+    })
 
-    local personTwo =
-        EntityManager.SpawnPed({
-            model = "a_m_m_skater_01",
+    local personTwo = EntityManager.SpawnPed({
+        model = "a_m_m_skater_01",
 
-            coords = vector3(
-                location.x + 3.5,
-                location.y + 1.5,
-                location.z
-            ),
+        coords = vector3(
+            location.x + 3.5,
+            location.y + 1.5,
+            location.z
+        ),
 
-            heading = 270.0,
-            group = SCENE_GROUP
-        })
+        heading = 270.0,
+        group = SCENE_GROUP
+    })
 
     if not personOne or not personTwo then
         setSceneState(
@@ -316,10 +298,7 @@ local function spawnActiveFight(dispatch)
     end)
 end
 
-local function spawnDisturbance(
-    dispatch,
-    variant
-)
+local function spawnDisturbance(dispatch, variant)
     if variant.id == "active_fight" then
         spawnActiveFight(dispatch)
         return
@@ -344,20 +323,39 @@ local function spawnDisturbance(
     end)
 end
 
+local function findRoadPosition(location)
+    local found, roadCoords, heading =
+        GetClosestVehicleNodeWithHeading(
+            location.x,
+            location.y,
+            location.z,
+            1,
+            3.0,
+            0
+        )
+
+    if found then
+        return roadCoords, heading
+    end
+
+    return vector3(
+        location.x + 12.0,
+        location.y,
+        location.z
+    ), 0.0
+end
+
 local function spawnAccident(dispatch)
     local location = dispatch.location
+
+    local roadCoords, roadHeading =
+        findRoadPosition(location)
 
     local damagedVehicle =
         EntityManager.SpawnVehicle({
             model = "blista",
-
-            coords = vector3(
-                location.x + 7.0,
-                location.y + 3.0,
-                location.z
-            ),
-
-            heading = 120.0,
+            coords = roadCoords,
+            heading = roadHeading,
             engineOn = false,
             group = SCENE_GROUP
         })
@@ -387,16 +385,21 @@ local function spawnAccident(dispatch)
         )
     end
 
+    local injuredCoords = GetOffsetFromCoordAndHeadingInWorldCoords(
+        roadCoords.x,
+        roadCoords.y,
+        roadCoords.z,
+        roadHeading,
+        2.5,
+        1.0,
+        0.0
+    )
+
     local injured =
         EntityManager.SpawnPed({
             model = "a_m_y_business_03",
-
-            coords = vector3(
-                location.x + 5.0,
-                location.y + 5.0,
-                location.z
-            ),
-
+            coords = injuredCoords,
+            heading = roadHeading,
             invincible = true,
             canRagdoll = false,
             group = SCENE_GROUP
@@ -413,26 +416,28 @@ local function spawnAccident(dispatch)
         )
     end
 
+    local ambulanceCoords =
+        GetOffsetFromCoordAndHeadingInWorldCoords(
+            roadCoords.x,
+            roadCoords.y,
+            roadCoords.z,
+            roadHeading,
+            -7.0,
+            0.0,
+            0.0
+        )
+
     local ambulance =
         EntityManager.SpawnVehicle({
             model = "ambulance",
-
-            coords = vector3(
-                location.x - 9.0,
-                location.y - 4.0,
-                location.z
-            ),
-
-            heading = 45.0,
+            coords = ambulanceCoords,
+            heading = roadHeading,
             engineOn = true,
             group = SCENE_GROUP
         })
 
     if ambulance then
-        SetVehicleSiren(
-            ambulance,
-            true
-        )
+        SetVehicleSiren(ambulance, true)
     end
 
     local paramedic =
@@ -440,12 +445,12 @@ local function spawnAccident(dispatch)
             model = "s_m_m_paramedic_01",
 
             coords = vector3(
-                location.x + 4.0,
-                location.y + 4.0,
-                location.z
+                injuredCoords.x + 1.0,
+                injuredCoords.y + 1.0,
+                injuredCoords.z
             ),
 
-            heading = 180.0,
+            heading = roadHeading,
             invincible = true,
             canRagdoll = false,
             group = SCENE_GROUP
@@ -469,8 +474,7 @@ end
 function IsDynamicSceneSafe()
     return SceneDirector.State == "SAFE"
         or SceneDirector.State == "IDLE"
-        or SceneDirector.State
-            == "SUSPECT_ARRESTED"
+        or SceneDirector.State == "SUSPECT_ARRESTED"
 end
 
 function GetDynamicSceneObjective()
@@ -490,8 +494,7 @@ function StartDynamicScene(dispatch)
         return
     end
 
-    local variant =
-        selectVariant(dispatch.type)
+    local variant = selectVariant(dispatch.type)
 
     SceneDirector.Variant = variant
 
@@ -508,10 +511,7 @@ function StartDynamicScene(dispatch)
         spawnRobbery(dispatch, variant)
 
     elseif dispatch.type == "DISTURBANCE" then
-        spawnDisturbance(
-            dispatch,
-            variant
-        )
+        spawnDisturbance(dispatch, variant)
 
     elseif dispatch.type
         == "TRAFFIC_ACCIDENT" then
@@ -581,7 +581,7 @@ CreateThread(function()
                     - GetEntityCoords(suspect)
                 )
 
-                if distance >= 120.0 then
+                if distance >= 160.0 then
                     setSceneState(
                         "SAFE",
                         "El sospechoso escapó. Entreviste al testigo."

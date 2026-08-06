@@ -26,10 +26,8 @@ local function loadProfiles()
         return
     end
 
-    local success, decoded = pcall(
-        json.decode,
-        rawData
-    )
+    local success, decoded =
+        pcall(json.decode, rawData)
 
     if not success
         or type(decoded) ~= "table" then
@@ -46,19 +44,13 @@ local function loadProfiles()
     profiles = decoded
 
     print(
-        (
-            "[Sentinel AI] %d perfiles cargados."
-        ):format(
-            #profiles
-        )
+        "[Sentinel AI] Perfiles cargados correctamente."
     )
 end
 
 local function saveProfiles()
-    local success, encoded = pcall(
-        json.encode,
-        profiles
-    )
+    local success, encoded =
+        pcall(json.encode, profiles)
 
     if not success or not encoded then
         print(
@@ -68,16 +60,19 @@ local function saveProfiles()
         return false
     end
 
-    local saved = SaveResourceFile(
-        RESOURCE_NAME,
-        SAVE_FILE,
-        encoded,
-        -1
-    )
+    local successWrite, result =
+        pcall(
+            SaveResourceFile,
+            RESOURCE_NAME,
+            SAVE_FILE,
+            encoded,
+            -1
+        )
 
-    if not saved then
+    if not successWrite then
         print(
-            "[Sentinel AI] ERROR escribiendo profiles.json."
+            "[Sentinel AI] ERROR escribiendo profiles.json: "
+                .. tostring(result)
         )
 
         return false
@@ -87,19 +82,21 @@ local function saveProfiles()
 end
 
 local function getPlayerIdentifier(sourceId)
-    local license = GetPlayerIdentifierByType(
-        sourceId,
-        "license"
-    )
+    local license =
+        GetPlayerIdentifierByType(
+            sourceId,
+            "license"
+        )
 
     if license then
         return license
     end
 
-    local fivem = GetPlayerIdentifierByType(
-        sourceId,
-        "fivem"
-    )
+    local fivem =
+        GetPlayerIdentifierByType(
+            sourceId,
+            "fivem"
+        )
 
     if fivem then
         return fivem
@@ -116,81 +113,41 @@ local function sanitizeHistory(history)
     end
 
     local cleanHistory = {}
-    local maximumCases = 100
 
     for index, caseData in ipairs(history) do
-        if index > maximumCases then
+        if index > 100 then
             break
         end
 
         if type(caseData) == "table" then
             local evidence = {}
 
-            if type(caseData.evidence) == "table" then
-                for evidenceIndex, evidenceName
-                    in ipairs(caseData.evidence) do
+            for evidenceIndex, evidenceName
+                in ipairs(caseData.evidence or {}) do
 
-                    if evidenceIndex > 20 then
-                        break
-                    end
-
-                    evidence[#evidence + 1] =
-                        tostring(evidenceName)
+                if evidenceIndex > 20 then
+                    break
                 end
+
+                evidence[#evidence + 1] =
+                    tostring(evidenceName)
             end
 
             cleanHistory[#cleanHistory + 1] = {
-                id = math.max(
-                    0,
-                    tonumber(caseData.id) or index
-                ),
-
-                code = tostring(
-                    caseData.code or "000"
-                ),
-
-                title = tostring(
-                    caseData.title or "Incidente"
-                ),
-
+                id = tonumber(caseData.id) or index,
+                code = tostring(caseData.code or "000"),
+                title = tostring(caseData.title or "Incidente"),
                 state = "COMPLETED",
-
-                witness = tostring(
-                    caseData.witness or ""
-                ),
-
+                witness = tostring(caseData.witness or ""),
                 evidence = evidence,
-
                 suspect = type(caseData.suspect) == "table"
-                    and {
-                        outcome = tostring(
-                            caseData.suspect.outcome
-                                or ""
-                        )
-                    }
-                    or {
-                        outcome = ""
-                    },
-
-                xp = math.max(
-                    0,
-                    tonumber(caseData.xp) or 0
-                ),
-
-                startedAt = tostring(
-                    caseData.startedAt or ""
-                ),
-
-                completedAt = tostring(
-                    caseData.completedAt or ""
-                ),
-
-                durationSeconds = math.max(
-                    0,
-                    tonumber(
-                        caseData.durationSeconds
-                    ) or 0
-                )
+                    and caseData.suspect
+                    or {},
+                xp = tonumber(caseData.xp) or 0,
+                startedAt = tostring(caseData.startedAt or ""),
+                completedAt = tostring(caseData.completedAt or ""),
+                durationSeconds =
+                    tonumber(caseData.durationSeconds) or 0
             }
         end
     end
@@ -206,20 +163,12 @@ local function sanitizeProfile(payload)
     return {
         xp = math.max(
             0,
-            math.min(
-                tonumber(payload.xp) or 0,
-                10000000
-            )
+            tonumber(payload.xp) or 0
         ),
 
         completedCases = math.max(
             0,
-            math.min(
-                tonumber(
-                    payload.completedCases
-                ) or 0,
-                1000000
-            )
+            tonumber(payload.completedCases) or 0
         ),
 
         history = sanitizeHistory(
@@ -279,15 +228,6 @@ RegisterNetEvent(
             sourceId,
             saved
         )
-    end
-)
-
-AddEventHandler(
-    "playerDropped",
-    function()
-        -- El cliente guarda al producirse cada cambio.
-        -- No dependemos del evento de desconexión,
-        -- porque el cliente puede desaparecer abruptamente.
     end
 )
 

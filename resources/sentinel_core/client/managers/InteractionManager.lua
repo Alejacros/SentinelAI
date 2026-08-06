@@ -10,17 +10,58 @@ local witnessStatements = {
 
 local function showHelp(message)
     BeginTextCommandDisplayHelp("STRING")
+    AddTextComponentSubstringPlayerName(message)
+    EndTextCommandDisplayHelp(0, false, true, -1)
+end
 
-    AddTextComponentSubstringPlayerName(
-        message
-    )
+local function canInterviewWitness()
+    if not PlayerData
+        or not PlayerData.SceneNPC
+        or not DoesEntityExist(PlayerData.SceneNPC) then
 
-    EndTextCommandDisplayHelp(
-        0,
-        false,
-        true,
-        -1
-    )
+        return false
+    end
+
+    if PlayerData.DispatchState == "EVIDENCE"
+        or PlayerData.DispatchState == "REPORT"
+        or PlayerData.DispatchState == "TRANSPORT" then
+
+        return false
+    end
+
+    if not SceneDirector then
+        return true
+    end
+
+    local safeStates = {
+        IDLE = true,
+        SAFE = true,
+        SUSPECT_ARRESTED = true
+    }
+
+    if safeStates[SceneDirector.State] then
+        return true
+    end
+
+    if IsSuspectArrested
+        and IsSuspectArrested() then
+
+        return true
+    end
+
+    local suspectState =
+        GetSuspectState
+        and GetSuspectState()
+        or "NONE"
+
+    local resolvedSuspectStates = {
+        NONE = true,
+        ARRESTED = true,
+        NEUTRALIZED = true,
+        ESCAPED = true
+    }
+
+    return resolvedSuspectStates[suspectState] == true
 end
 
 local function interviewWitness()
@@ -28,16 +69,20 @@ local function interviewWitness()
         return
     end
 
-    if not IsDynamicSceneSafe() then
-        local currentTime = GetGameTimer()
+    if not canInterviewWitness() then
+        local now = GetGameTimer()
 
-        if currentTime >= warningCooldown then
-            warningCooldown =
-                currentTime + 3000
+        if now >= warningCooldown then
+            warningCooldown = now + 3000
+
+            local objective =
+                GetDynamicSceneObjective
+                and GetDynamicSceneObjective()
+                or "Controle la situación antes de entrevistar al testigo."
 
             Sentinel.Notify(
                 "CENTRAL",
-                GetDynamicSceneObjective(),
+                objective,
                 {255, 100, 80}
             )
         end
@@ -48,14 +93,12 @@ local function interviewWitness()
     interactionLocked = true
 
     local statement =
-        witnessStatements[
-            math.random(#witnessStatements)
-        ]
+        witnessStatements[math.random(#witnessStatements)]
 
     if not AddWitnessToCurrentCase(statement) then
         Sentinel.Notify(
             "ERROR",
-            "No existe un expediente activo.",
+            "No existe un expediente activo para guardar el testimonio.",
             {255, 80, 80}
         )
 
@@ -77,15 +120,18 @@ local function interviewWitness()
         {0, 255, 120}
     )
 
-    local evidenceCreated =
-        SpawnEvidence()
+    local evidenceCreated = SpawnEvidence()
 
     if not evidenceCreated then
-        PlayerData.DispatchState = "REPORT"
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible generar la evidencia.",
+            {255, 80, 80}
+        )
 
-        CompleteCase(0)
-        CleanupCrimeScene()
-        CompleteCurrentDispatch()
+        PlayerData.DispatchState = "ON_SCENE"
+        interactionLocked = false
+        return
     end
 
     interactionLocked = false
@@ -95,45 +141,37 @@ CreateThread(function()
     while true do
         local sleep = 500
 
-        if PlayerData.DispatchState
-                == "ON_SCENE"
+        if PlayerData
             and PlayerData.SceneNPC
-            and DoesEntityExist(
+            and DoesEntityExist(PlayerData.SceneNPC) then
+
+            local npc =
                 PlayerData.SceneNPC
-            ) then
 
             local npcCoords =
-                GetEntityCoords(
-                    PlayerData.SceneNPC
-                )
+                GetEntityCoords(npc)
 
             local playerCoords =
-                GetEntityCoords(
-                    PlayerPedId()
-                )
+                GetEntityCoords(PlayerPedId())
 
             local distance =
                 #(playerCoords - npcCoords)
 
-            if distance <= 40.0 then
+            if distance <= 35.0 then
                 sleep = 0
 
-                if distance <= 2.8 then
-                    if IsDynamicSceneSafe() then
+                if distance <= 3.0 then
+                    if canInterviewWitness() then
                         showHelp(
                             "Pulsa ~INPUT_CONTEXT~ para hablar con el testigo."
                         )
                     else
                         showHelp(
-                            "La escena no es segura. Controle la situación."
+                            "La escena no es segura. Controle la situación primero."
                         )
                     end
 
-                    if IsControlJustPressed(
-                        0,
-                        38
-                    ) then
-
+                    if IsControlJustPressed(0, 38) then
                         interviewWitness()
                     end
                 end

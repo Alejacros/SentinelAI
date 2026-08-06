@@ -17,17 +17,31 @@ local function getDispatchLabel()
         EN_ROUTE = "En ruta",
         ON_SCENE = "En escena",
         EVIDENCE = "Buscando evidencia",
+        TRANSPORT = "Trasladando detenido",
         REPORT = "Procesando informe"
     }
 
     return labels[PlayerData.DispatchState] or "Sin estado"
 end
 
+local function shouldShowHud()
+    if not PlayerData then
+        return false
+    end
+
+    if PlayerData.OnDuty then
+        return true
+    end
+
+    return PlayerData.DispatchState
+        and PlayerData.DispatchState ~= "OFF_DUTY"
+end
+
 CreateThread(function()
     while true do
         local sleep = 500
 
-        if PlayerData.OnDuty then
+        if shouldShowHud() then
             sleep = 0
 
             DrawRect(
@@ -38,7 +52,7 @@ CreateThread(function()
                 0,
                 0,
                 0,
-                180
+                190
             )
 
             drawHudText(
@@ -49,28 +63,30 @@ CreateThread(function()
             )
 
             drawHudText(
-                "Rango: " .. PlayerData.Rank,
+                "Rango: " .. (PlayerData.Rank or "Cadete"),
                 0.775,
                 0.115,
                 0.29
             )
 
             drawHudText(
-                "XP: " .. PlayerData.XP,
+                "XP: " .. tostring(PlayerData.XP or 0),
                 0.775,
                 0.145,
                 0.29
             )
 
             drawHudText(
-                "Casos: " .. PlayerData.CompletedCases,
+                "Casos: "
+                    .. tostring(PlayerData.CompletedCases or 0),
                 0.775,
                 0.175,
                 0.29
             )
 
             drawHudText(
-                "Unidad: " .. (PlayerData.Unit or "Sin asignar"),
+                "Unidad: "
+                    .. (PlayerData.Unit or "Sin asignar"),
                 0.775,
                 0.205,
                 0.29
