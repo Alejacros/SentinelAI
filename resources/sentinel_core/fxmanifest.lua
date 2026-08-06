@@ -43,6 +43,8 @@ client_scripts {
     'client/managers/SceneDirectorManager.lua',
     'client/managers/IncidentVariantManager.lua',
     'client/managers/PoliceAIManager.lua',
+    'client/managers/UseOfForceManager.lua',
+    'client/managers/BodyCamManager.lua',
 
     'client/managers/SuspectManager.lua',
     'client/managers/ArrestManager.lua',
