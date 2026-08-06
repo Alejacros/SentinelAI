@@ -1,12 +1,27 @@
-local interactionLocked = false
-local warningCooldown = 0
+print("[Sentinel AI] Cargando InteractionManager...")
+
+InteractionManager = {
+    Locked = false,
+    WitnessInterviewed = false,
+    WarningCooldown = 0
+}
 
 local witnessStatements = {
-    "Vi un vehículo salir a toda velocidad hacia el norte.",
-    "Escuché un fuerte impacto y después vi a alguien escapar.",
+    "Vi a una persona salir corriendo del lugar.",
+    "Escuché gritos y luego observé al sospechoso escapar.",
     "La persona involucrada parecía muy nerviosa.",
-    "No vi su rostro, pero llevaba ropa oscura."
+    "No pude ver bien su rostro, pero llevaba ropa oscura.",
+    "Vi un vehículo alejarse a gran velocidad.",
+    "Todo ocurrió muy rápido. Creo que había más de una persona."
 }
+
+local function notify(title, message, color)
+    Sentinel.Notify(
+        title,
+        message,
+        color or {255, 255, 255}
+    )
+end
 
 local function showHelp(message)
     BeginTextCommandDisplayHelp("STRING")
@@ -14,45 +29,33 @@ local function showHelp(message)
     EndTextCommandDisplayHelp(0, false, true, -1)
 end
 
-local function canInterviewWitness()
-    if not PlayerData
-        or not PlayerData.SceneNPC
-        or not DoesEntityExist(PlayerData.SceneNPC) then
-
-        return false
+local function getWitness()
+    if not PlayerData then
+        return nil
     end
 
-    if PlayerData.DispatchState == "EVIDENCE"
-        or PlayerData.DispatchState == "REPORT"
-        or PlayerData.DispatchState == "TRANSPORT" then
+    local witness = PlayerData.SceneNPC
 
-        return false
+    if witness
+        and witness ~= 0
+        and DoesEntityExist(witness) then
+
+        return witness
     end
 
-    if not SceneDirector then
-        return true
+    return nil
+end
+
+local function getSuspectStateSafe()
+    if type(GetSuspectState) == "function" then
+        return GetSuspectState() or "NONE"
     end
 
-    local safeStates = {
-        IDLE = true,
-        SAFE = true,
-        SUSPECT_ARRESTED = true
-    }
+    return "NONE"
+end
 
-    if safeStates[SceneDirector.State] then
-        return true
-    end
-
-    if IsSuspectArrested
-        and IsSuspectArrested() then
-
-        return true
-    end
-
-    local suspectState =
-        GetSuspectState
-        and GetSuspectState()
-        or "NONE"
+local function sceneHasUnresolvedThreat()
+    local suspectState = getSuspectStateSafe()
 
     local resolvedSuspectStates = {
         NONE = true,
@@ -61,113 +64,228 @@ local function canInterviewWitness()
         ESCAPED = true
     }
 
-    return resolvedSuspectStates[suspectState] == true
+    if resolvedSuspectStates[suspectState] then
+        return false
+    end
+
+    if type(IsSuspectArrested) == "function"
+        and IsSuspectArrested() then
+
+        return false
+    end
+
+    if not SceneDirector then
+        return false
+    end
+
+    local dangerousDirectorStates = {
+        ACTIVE_THREAT = true,
+        SUSPECT_FLEEING = true,
+        ACTIVE_DISTURBANCE = true
+    }
+
+    return dangerousDirectorStates[
+        SceneDirector.State
+    ] == true
+end
+
+local function canInterviewWitness()
+    if InteractionManager.WitnessInterviewed then
+        return false
+    end
+
+    if not getWitness() then
+        return false
+    end
+
+    if not PlayerData then
+        return false
+    end
+
+    -- Solo permitimos la entrevista durante la fase de escena.
+    if PlayerData.DispatchState ~= "ON_SCENE" then
+        return false
+    end
+
+    return not sceneHasUnresolvedThreat()
+end
+
+local function removeWitnessIndicators()
+    if PlayerData.SceneBlip
+        and DoesBlipExist(PlayerData.SceneBlip) then
+
+        RemoveBlip(PlayerData.SceneBlip)
+    end
+
+    PlayerData.SceneBlip = nil
+end
+
+local function spawnEvidenceSafely()
+    print(
+        "[Sentinel AI] Solicitando evidencia | "
+            .. "EvidenceManager = "
+            .. type(EvidenceManager)
+            .. " | SpawnEvidence = "
+            .. type(SpawnEvidence)
+    )
+
+    if EvidenceManager
+        and type(EvidenceManager.Spawn) == "function" then
+
+        return EvidenceManager.Spawn()
+    end
+
+    if type(SpawnEvidence) == "function" then
+        return SpawnEvidence()
+    end
+
+    notify(
+        "ERROR",
+        "El sistema de evidencia no está disponible.",
+        {255, 80, 80}
+    )
+
+    print(
+        "[Sentinel AI] ERROR: no existe EvidenceManager.Spawn ni SpawnEvidence."
+    )
+
+    return false
 end
 
 local function interviewWitness()
-    if interactionLocked then
+    if InteractionManager.Locked
+        or InteractionManager.WitnessInterviewed then
+
         return
     end
 
     if not canInterviewWitness() then
         local now = GetGameTimer()
 
-        if now >= warningCooldown then
-            warningCooldown = now + 3000
+        if now >= InteractionManager.WarningCooldown then
+            InteractionManager.WarningCooldown =
+                now + 2500
 
-            local objective =
-                GetDynamicSceneObjective
-                and GetDynamicSceneObjective()
-                or "Controle la situación antes de entrevistar al testigo."
+            if sceneHasUnresolvedThreat() then
+                local objective =
+                    type(GetDynamicSceneObjective) == "function"
+                    and GetDynamicSceneObjective()
+                    or "Controle la amenaza antes de entrevistar al testigo."
 
-            Sentinel.Notify(
-                "CENTRAL",
-                objective,
-                {255, 100, 80}
-            )
+                notify(
+                    "CENTRAL",
+                    objective,
+                    {255, 100, 80}
+                )
+            end
         end
 
         return
     end
 
-    interactionLocked = true
+    InteractionManager.Locked = true
 
     local statement =
-        witnessStatements[math.random(#witnessStatements)]
+        witnessStatements[
+            math.random(#witnessStatements)
+        ]
 
-    if not AddWitnessToCurrentCase(statement) then
-        Sentinel.Notify(
+    if type(AddWitnessToCurrentCase) ~= "function"
+        or not AddWitnessToCurrentCase(statement) then
+
+        notify(
             "ERROR",
-            "No existe un expediente activo para guardar el testimonio.",
+            "No existe un expediente activo para registrar el testimonio.",
             {255, 80, 80}
         )
 
-        interactionLocked = false
+        print(
+            "[Sentinel AI] ERROR: no fue posible guardar el testimonio."
+        )
+
+        InteractionManager.Locked = false
         return
     end
 
+    InteractionManager.WitnessInterviewed = true
     PlayerData.DispatchState = "EVIDENCE"
 
-    Sentinel.Notify(
+    removeWitnessIndicators()
+
+    notify(
         "TESTIGO",
         statement,
         {255, 255, 0}
     )
 
-    Sentinel.Notify(
+    notify(
         "CENTRAL",
-        "Revise el área y recoja la evidencia.",
+        "Testimonio registrado. Busque y recoja la evidencia.",
         {0, 255, 120}
     )
 
-    local evidenceCreated = SpawnEvidence()
+    local evidenceCreated =
+        spawnEvidenceSafely()
+
+    print(
+        "[Sentinel AI] Resultado al generar evidencia: "
+            .. tostring(evidenceCreated)
+    )
 
     if not evidenceCreated then
-        Sentinel.Notify(
+        InteractionManager.WitnessInterviewed = false
+        PlayerData.DispatchState = "ON_SCENE"
+
+        notify(
             "ERROR",
-            "No fue posible generar la evidencia.",
+            "La evidencia no pudo generarse. Puede volver a entrevistar al testigo.",
             {255, 80, 80}
         )
-
-        PlayerData.DispatchState = "ON_SCENE"
-        interactionLocked = false
-        return
     end
 
-    interactionLocked = false
+    InteractionManager.Locked = false
+end
+
+function InteractionManager.Reset()
+    InteractionManager.Locked = false
+    InteractionManager.WitnessInterviewed = false
+    InteractionManager.WarningCooldown = 0
 end
 
 CreateThread(function()
     while true do
         local sleep = 500
+        local witness = getWitness()
 
-        if PlayerData
-            and PlayerData.SceneNPC
-            and DoesEntityExist(PlayerData.SceneNPC) then
+        if witness
+            and not InteractionManager.WitnessInterviewed then
 
-            local npc =
-                PlayerData.SceneNPC
-
-            local npcCoords =
-                GetEntityCoords(npc)
+            local witnessCoords =
+                GetEntityCoords(witness)
 
             local playerCoords =
                 GetEntityCoords(PlayerPedId())
 
             local distance =
-                #(playerCoords - npcCoords)
+                #(playerCoords - witnessCoords)
 
             if distance <= 35.0 then
                 sleep = 0
 
                 if distance <= 3.0 then
-                    if canInterviewWitness() then
+                    if PlayerData.DispatchState ~= "ON_SCENE" then
                         showHelp(
-                            "Pulsa ~INPUT_CONTEXT~ para hablar con el testigo."
+                            "Espere a que la escena esté activa."
                         )
+
+                    elseif sceneHasUnresolvedThreat() then
+                        showHelp(
+                            "La escena no es segura. Controle la amenaza primero."
+                        )
+
                     else
                         showHelp(
-                            "La escena no es segura. Controle la situación primero."
+                            "Pulsa ~INPUT_CONTEXT~ para hablar con el testigo."
                         )
                     end
 
@@ -181,3 +299,41 @@ CreateThread(function()
         Wait(sleep)
     end
 end)
+
+CreateThread(function()
+    local previousDispatchState = nil
+
+    while true do
+        Wait(500)
+
+        if PlayerData then
+            local currentState =
+                PlayerData.DispatchState
+
+            if currentState ~= previousDispatchState then
+                if currentState == "WAITING"
+                    or currentState == "OFF_DUTY"
+                    or currentState == "EN_ROUTE" then
+
+                    InteractionManager.Reset()
+                end
+
+                previousDispatchState =
+                    currentState
+            end
+        end
+    end
+end)
+
+AddEventHandler(
+    "onResourceStop",
+    function(resourceName)
+        if resourceName ~= GetCurrentResourceName() then
+            return
+        end
+
+        InteractionManager.Reset()
+    end
+)
+
+print("[Sentinel AI] InteractionManager listo.")
