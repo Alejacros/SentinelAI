@@ -45,6 +45,7 @@ client_scripts {
     'client/managers/PoliceAIManager.lua',
     'client/managers/UseOfForceManager.lua',
     'client/managers/BodyCamManager.lua',
+    'client/managers/ProcedureManager.lua',
 
     'client/managers/SuspectManager.lua',
     'client/managers/ArrestManager.lua',
