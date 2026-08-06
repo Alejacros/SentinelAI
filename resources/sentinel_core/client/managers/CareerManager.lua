@@ -5,23 +5,23 @@ local ranks = {
     },
     {
         name = "Oficial",
-        requiredXP = 10000
+        requiredXP = 100
     },
     {
         name = "Oficial II",
-        requiredXP = 25000
+        requiredXP = 250
     },
     {
         name = "Cabo",
-        requiredXP = 50000
+        requiredXP = 500
     },
     {
         name = "Sargento",
-        requiredXP = 90000
+        requiredXP = 900
     },
     {
         name = "Teniente",
-        requiredXP = 150000
+        requiredXP = 1500
     }
 }
 
@@ -49,30 +49,81 @@ function GetNextRank()
     return nil
 end
 
+function ApplyCareerProgress(
+    xp,
+    completedCases
+)
+    PlayerData.XP = math.max(
+        0,
+        tonumber(xp) or 0
+    )
+
+    PlayerData.CompletedCases = math.max(
+        0,
+        tonumber(completedCases) or 0
+    )
+
+    local currentRank =
+        getRankForXP(PlayerData.XP)
+
+    PlayerData.Rank =
+        currentRank.name
+
+    TriggerEvent(
+        "sentinel:careerLoaded",
+        PlayerData
+    )
+end
+
 function AwardXP(amount)
-    if type(amount) ~= "number" or amount <= 0 then
-        return
+    amount = tonumber(amount) or 0
+
+    if amount <= 0 then
+        return false
     end
 
-    local previousRank = PlayerData.Rank
+    local previousRank =
+        PlayerData.Rank
 
-    PlayerData.XP = PlayerData.XP + amount
-    PlayerData.CompletedCases = PlayerData.CompletedCases + 1
+    PlayerData.XP =
+        PlayerData.XP + amount
 
-    local currentRank = getRankForXP(PlayerData.XP)
-    PlayerData.Rank = currentRank.name
+    PlayerData.CompletedCases =
+        PlayerData.CompletedCases + 1
+
+    local currentRank =
+        getRankForXP(PlayerData.XP)
+
+    PlayerData.Rank =
+        currentRank.name
 
     Sentinel.Notify(
         "CARRERA",
-        ("Caso completado: +%d XP"):format(amount),
+        (
+            "Caso completado: +%d XP"
+        ):format(amount),
         {100, 200, 255}
     )
 
     if PlayerData.Rank ~= previousRank then
         Sentinel.Notify(
             "ASCENSO",
-            ("Nuevo rango: %s"):format(PlayerData.Rank),
+            (
+                "Nuevo rango: %s"
+            ):format(PlayerData.Rank),
             {255, 220, 0}
         )
     end
+
+    TriggerEvent(
+        "sentinel:careerUpdated",
+        {
+            xp = PlayerData.XP,
+            completedCases =
+                PlayerData.CompletedCases,
+            rank = PlayerData.Rank
+        }
+    )
+
+    return true
 end

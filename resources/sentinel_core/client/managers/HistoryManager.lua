@@ -16,31 +16,58 @@ end
 
 function ArchiveCase(caseData)
     if type(caseData) ~= "table" then
-        print("[Sentinel AI] ERROR: ArchiveCase recibió datos inválidos.")
+        print(
+            "[Sentinel AI] ArchiveCase recibió datos inválidos."
+        )
+
         return false
     end
 
-    local archivedCase = deepCopy(caseData)
-
-    table.insert(CaseHistory, 1, archivedCase)
-
-    print(
-        ("[Sentinel AI] Caso #%s archivado. Total: %d")
-            :format(
-                tostring(archivedCase.id),
-                #CaseHistory
-            )
+    table.insert(
+        CaseHistory,
+        1,
+        deepCopy(caseData)
     )
+
+    while #CaseHistory > 100 do
+        table.remove(
+            CaseHistory,
+            #CaseHistory
+        )
+    end
 
     Sentinel.Notify(
         "ARCHIVO",
-        ("Caso #%04d almacenado en el historial."):format(
-            archivedCase.id or 0
+        (
+            "Caso #%04d almacenado."
+        ):format(
+            tonumber(caseData.id) or 0
         ),
         {90, 190, 255}
     )
 
+    TriggerEvent(
+        "sentinel:historyUpdated",
+        CaseHistory
+    )
+
     return true
+end
+
+function SetCaseHistory(history)
+    CaseHistory = {}
+
+    if type(history) ~= "table" then
+        return
+    end
+
+    for _, caseData in ipairs(history) do
+        if type(caseData) == "table" then
+            CaseHistory[
+                #CaseHistory + 1
+            ] = deepCopy(caseData)
+        end
+    end
 end
 
 function GetCaseHistory()
@@ -51,28 +78,41 @@ function GetCaseHistoryCount()
     return #CaseHistory
 end
 
-function ClearCaseHistory()
-    CaseHistory = {}
+function GetCaseById(caseId)
+    for _, caseData in ipairs(
+        CaseHistory
+    ) do
+        if tonumber(caseData.id)
+            == tonumber(caseId) then
+
+            return caseData
+        end
+    end
+
+    return nil
 end
 
-RegisterCommand("historydebug", function()
-    Sentinel.Notify(
-        "DEV",
-        ("Casos guardados en memoria: %d"):format(
-            #CaseHistory
-        ),
-        {255, 180, 0}
-    )
+function ClearCaseHistory()
+    CaseHistory = {}
 
-    for _, caseData in ipairs(CaseHistory) do
-        print(
-            ("[Sentinel AI] #%s | %s | %s | %s XP")
-                :format(
-                    tostring(caseData.id),
-                    tostring(caseData.code),
-                    tostring(caseData.title),
-                    tostring(caseData.xp)
-                )
+    TriggerEvent(
+        "sentinel:historyUpdated",
+        CaseHistory
+    )
+end
+
+RegisterCommand(
+    "historydebug",
+    function()
+        Sentinel.Notify(
+            "DEV",
+            (
+                "Casos guardados: %d"
+            ):format(
+                #CaseHistory
+            ),
+            {255, 180, 0}
         )
-    end
-end, false)
+    end,
+    false
+)
