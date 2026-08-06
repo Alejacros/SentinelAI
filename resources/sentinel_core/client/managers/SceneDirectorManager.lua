@@ -2,10 +2,12 @@ SceneDirector = {
     State = "IDLE",
     Variant = nil,
     Objective = nil,
-    Entities = {},
-    Blips = {},
+    Suspect = nil,
+    Fighters = nil,
     StartedAt = 0
 }
+
+local SCENE_GROUP = "dynamic_scene"
 
 local function notify(message)
     Sentinel.Notify(
@@ -13,138 +15,6 @@ local function notify(message)
         message,
         {255, 170, 60}
     )
-end
-
-local function loadModel(model)
-    if not IsModelInCdimage(model)
-        or not IsModelValid(model) then
-
-        return false
-    end
-
-    RequestModel(model)
-
-    local timeout = GetGameTimer() + 7000
-
-    while not HasModelLoaded(model) do
-        Wait(50)
-
-        if GetGameTimer() >= timeout then
-            return false
-        end
-    end
-
-    return true
-end
-
-local function registerEntity(entity)
-    if entity
-        and entity ~= 0
-        and DoesEntityExist(entity) then
-
-        SceneDirector.Entities[
-            #SceneDirector.Entities + 1
-        ] = entity
-    end
-
-    return entity
-end
-
-local function registerBlip(blip)
-    if blip and DoesBlipExist(blip) then
-        SceneDirector.Blips[
-            #SceneDirector.Blips + 1
-        ] = blip
-    end
-
-    return blip
-end
-
-local function createPed(modelName, coords, heading)
-    local model = GetHashKey(modelName)
-
-    if not loadModel(model) then
-        return nil
-    end
-
-    RequestCollisionAtCoord(
-        coords.x,
-        coords.y,
-        coords.z
-    )
-
-    local ped = CreatePed(
-        4,
-        model,
-        coords.x,
-        coords.y,
-        coords.z,
-        heading or 0.0,
-        false,
-        false
-    )
-
-    if ped == 0 or not DoesEntityExist(ped) then
-        SetModelAsNoLongerNeeded(model)
-        return nil
-    end
-
-    SetEntityAsMissionEntity(ped, true, true)
-    SetModelAsNoLongerNeeded(model)
-
-    return registerEntity(ped)
-end
-
-local function createVehicle(modelName, coords, heading)
-    local model = GetHashKey(modelName)
-
-    if not loadModel(model) then
-        return nil
-    end
-
-    local vehicle = CreateVehicle(
-        model,
-        coords.x,
-        coords.y,
-        coords.z,
-        heading or 0.0,
-        false,
-        false
-    )
-
-    if vehicle == 0
-        or not DoesEntityExist(vehicle) then
-
-        SetModelAsNoLongerNeeded(model)
-        return nil
-    end
-
-    SetEntityAsMissionEntity(vehicle, true, true)
-    SetVehicleOnGroundProperly(vehicle)
-
-    SetModelAsNoLongerNeeded(model)
-
-    return registerEntity(vehicle)
-end
-
-local function createEntityBlip(
-    entity,
-    name,
-    colour,
-    sprite
-)
-    local blip = AddBlipForEntity(entity)
-
-    SetBlipSprite(blip, sprite or 1)
-    SetBlipColour(blip, colour or 1)
-    SetBlipScale(blip, 0.9)
-    SetBlipAsShortRange(blip, false)
-
-    BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString(name)
-    EndTextCommandSetBlipName(blip)
-
-    return registerBlip(blip)
 end
 
 local function setSceneState(state, objective)
@@ -161,25 +31,49 @@ local function selectVariant(dispatchType)
     local definitions =
         ScenarioDefinitions[dispatchType]
 
-    if not definitions or #definitions == 0 then
+    if not definitions
+        or #definitions == 0 then
+
         return nil
     end
 
-    return definitions[math.random(#definitions)]
+    return definitions[
+        math.random(#definitions)
+    ]
+end
+
+local function createSuspectBlip(
+    suspect,
+    name
+)
+    return EntityManager.CreateEntityBlip(
+        suspect,
+        {
+            name = name,
+            sprite = 84,
+            colour = 1,
+            scale = 0.95,
+            group = SCENE_GROUP
+        }
+    )
 end
 
 local function spawnArmedRobbery(dispatch)
     local location = dispatch.location
 
-    local suspect = createPed(
-        "g_m_y_mexgoon_02",
-        vector3(
+    local suspect = EntityManager.SpawnPed({
+        model = "g_m_y_mexgoon_02",
+
+        coords = vector3(
             location.x + 8.0,
             location.y + 3.0,
             location.z
         ),
-        180.0
-    )
+
+        heading = 180.0,
+        blockEvents = true,
+        group = SCENE_GROUP
+    })
 
     if not suspect then
         setSceneState(
@@ -204,14 +98,15 @@ local function spawnArmedRobbery(dispatch)
     SetPedCombatAbility(suspect, 1)
     SetPedCombatRange(suspect, 1)
     SetPedCombatMovement(suspect, 2)
-    SetPedFleeAttributes(suspect, 0, false)
-    SetBlockingOfNonTemporaryEvents(suspect, true)
-
-    createEntityBlip(
+    SetPedFleeAttributes(
         suspect,
-        "Sospechoso armado",
-        1,
-        84
+        0,
+        false
+    )
+
+    createSuspectBlip(
+        suspect,
+        "Sospechoso armado"
     )
 
     setSceneState(
@@ -223,7 +118,9 @@ local function spawnArmedRobbery(dispatch)
         Wait(2000)
 
         if DoesEntityExist(suspect)
-            and not IsEntityDead(suspect) then
+            and not IsEntityDead(suspect)
+            and SceneDirector.State
+                == "ACTIVE_THREAT" then
 
             TaskCombatPed(
                 suspect,
@@ -238,15 +135,19 @@ end
 local function spawnFleeingRobbery(dispatch)
     local location = dispatch.location
 
-    local suspect = createPed(
-        "g_m_y_ballaeast_01",
-        vector3(
+    local suspect = EntityManager.SpawnPed({
+        model = "g_m_y_ballaeast_01",
+
+        coords = vector3(
             location.x + 8.0,
             location.y - 3.0,
             location.z
         ),
-        90.0
-    )
+
+        heading = 90.0,
+        blockEvents = true,
+        group = SCENE_GROUP
+    })
 
     if not suspect then
         setSceneState(
@@ -259,16 +160,9 @@ local function spawnFleeingRobbery(dispatch)
 
     SceneDirector.Suspect = suspect
 
-    SetBlockingOfNonTemporaryEvents(
+    createSuspectBlip(
         suspect,
-        true
-    )
-
-    createEntityBlip(
-        suspect,
-        "Sospechoso huyendo",
-        1,
-        84
+        "Sospechoso huyendo"
     )
 
     setSceneState(
@@ -286,11 +180,16 @@ local function spawnFleeingRobbery(dispatch)
     )
 end
 
-local function spawnRobbery(dispatch, variant)
+local function spawnRobbery(
+    dispatch,
+    variant
+)
     if variant.id == "armed_suspect" then
         spawnArmedRobbery(dispatch)
 
-    elseif variant.id == "fleeing_suspect" then
+    elseif variant.id
+        == "fleeing_suspect" then
+
         spawnFleeingRobbery(dispatch)
 
     else
@@ -304,25 +203,33 @@ end
 local function spawnActiveFight(dispatch)
     local location = dispatch.location
 
-    local personOne = createPed(
-        "a_m_y_hipster_01",
-        vector3(
-            location.x + 6.0,
-            location.y + 1.5,
-            location.z
-        ),
-        90.0
-    )
+    local personOne =
+        EntityManager.SpawnPed({
+            model = "a_m_y_hipster_01",
 
-    local personTwo = createPed(
-        "a_m_m_skater_01",
-        vector3(
-            location.x + 3.5,
-            location.y + 1.5,
-            location.z
-        ),
-        270.0
-    )
+            coords = vector3(
+                location.x + 6.0,
+                location.y + 1.5,
+                location.z
+            ),
+
+            heading = 90.0,
+            group = SCENE_GROUP
+        })
+
+    local personTwo =
+        EntityManager.SpawnPed({
+            model = "a_m_m_skater_01",
+
+            coords = vector3(
+                location.x + 3.5,
+                location.y + 1.5,
+                location.z
+            ),
+
+            heading = 270.0,
+            group = SCENE_GROUP
+        })
 
     if not personOne or not personTwo then
         setSceneState(
@@ -338,28 +245,24 @@ local function spawnActiveFight(dispatch)
         personTwo
     }
 
-    SetBlockingOfNonTemporaryEvents(
+    EntityManager.CreateEntityBlip(
         personOne,
-        true
+        {
+            name = "Persona involucrada",
+            sprite = 280,
+            colour = 47,
+            group = SCENE_GROUP
+        }
     )
 
-    SetBlockingOfNonTemporaryEvents(
+    EntityManager.CreateEntityBlip(
         personTwo,
-        true
-    )
-
-    createEntityBlip(
-        personOne,
-        "Persona involucrada",
-        47,
-        280
-    )
-
-    createEntityBlip(
-        personTwo,
-        "Persona involucrada",
-        47,
-        280
+        {
+            name = "Persona involucrada",
+            sprite = 280,
+            colour = 47,
+            group = SCENE_GROUP
+        }
     )
 
     setSceneState(
@@ -384,26 +287,22 @@ local function spawnActiveFight(dispatch)
     CreateThread(function()
         Wait(12000)
 
-        if DoesEntityExist(personOne) then
-            ClearPedTasks(personOne)
-            TaskHandsUp(
-                personOne,
-                7000,
-                PlayerPedId(),
-                -1,
-                true
-            )
-        end
+        for _, fighter in ipairs(
+            SceneDirector.Fighters or {}
+        ) do
+            if DoesEntityExist(fighter)
+                and not IsEntityDead(fighter) then
 
-        if DoesEntityExist(personTwo) then
-            ClearPedTasks(personTwo)
-            TaskHandsUp(
-                personTwo,
-                7000,
-                PlayerPedId(),
-                -1,
-                true
-            )
+                ClearPedTasksImmediately(fighter)
+
+                TaskHandsUp(
+                    fighter,
+                    7000,
+                    PlayerPedId(),
+                    -1,
+                    true
+                )
+            end
         end
 
         if SceneDirector.State
@@ -417,7 +316,10 @@ local function spawnActiveFight(dispatch)
     end)
 end
 
-local function spawnDisturbance(dispatch, variant)
+local function spawnDisturbance(
+    dispatch,
+    variant
+)
     if variant.id == "active_fight" then
         spawnActiveFight(dispatch)
         return
@@ -425,7 +327,7 @@ local function spawnDisturbance(dispatch, variant)
 
     setSceneState(
         "ACTIVE_DISTURBANCE",
-        "Discusión activa. Mantenga la seguridad de la escena."
+        "Discusión activa. Mantenga segura la escena."
     )
 
     CreateThread(function()
@@ -445,15 +347,20 @@ end
 local function spawnAccident(dispatch)
     local location = dispatch.location
 
-    local damagedVehicle = createVehicle(
-        "blista",
-        vector3(
-            location.x + 7.0,
-            location.y + 3.0,
-            location.z
-        ),
-        120.0
-    )
+    local damagedVehicle =
+        EntityManager.SpawnVehicle({
+            model = "blista",
+
+            coords = vector3(
+                location.x + 7.0,
+                location.y + 3.0,
+                location.z
+            ),
+
+            heading = 120.0,
+            engineOn = false,
+            group = SCENE_GROUP
+        })
 
     if damagedVehicle then
         SetVehicleEngineHealth(
@@ -480,28 +387,23 @@ local function spawnAccident(dispatch)
         )
     end
 
-    local injured = createPed(
-        "a_m_y_business_03",
-        vector3(
-            location.x + 5.0,
-            location.y + 5.0,
-            location.z
-        ),
-        0.0
-    )
+    local injured =
+        EntityManager.SpawnPed({
+            model = "a_m_y_business_03",
+
+            coords = vector3(
+                location.x + 5.0,
+                location.y + 5.0,
+                location.z
+            ),
+
+            invincible = true,
+            canRagdoll = false,
+            group = SCENE_GROUP
+        })
 
     if injured then
         SetEntityHealth(injured, 130)
-        SetEntityInvincible(injured, true)
-        SetEntityCanBeDamaged(
-            injured,
-            false
-        )
-
-        SetBlockingOfNonTemporaryEvents(
-            injured,
-            true
-        )
 
         TaskStartScenarioInPlace(
             injured,
@@ -511,48 +413,45 @@ local function spawnAccident(dispatch)
         )
     end
 
-    local ambulance = createVehicle(
-        "ambulance",
-        vector3(
-            location.x - 9.0,
-            location.y - 4.0,
-            location.z
-        ),
-        45.0
-    )
+    local ambulance =
+        EntityManager.SpawnVehicle({
+            model = "ambulance",
+
+            coords = vector3(
+                location.x - 9.0,
+                location.y - 4.0,
+                location.z
+            ),
+
+            heading = 45.0,
+            engineOn = true,
+            group = SCENE_GROUP
+        })
 
     if ambulance then
-        SetVehicleSiren(ambulance, true)
-        SetVehicleEngineOn(
+        SetVehicleSiren(
             ambulance,
-            true,
-            true,
-            false
+            true
         )
     end
 
-    local paramedic = createPed(
-        "s_m_m_paramedic_01",
-        vector3(
-            location.x + 4.0,
-            location.y + 4.0,
-            location.z
-        ),
-        180.0
-    )
+    local paramedic =
+        EntityManager.SpawnPed({
+            model = "s_m_m_paramedic_01",
+
+            coords = vector3(
+                location.x + 4.0,
+                location.y + 4.0,
+                location.z
+            ),
+
+            heading = 180.0,
+            invincible = true,
+            canRagdoll = false,
+            group = SCENE_GROUP
+        })
 
     if paramedic then
-        SetEntityInvincible(paramedic, true)
-        SetEntityCanBeDamaged(
-            paramedic,
-            false
-        )
-
-        SetBlockingOfNonTemporaryEvents(
-            paramedic,
-            true
-        )
-
         TaskStartScenarioInPlace(
             paramedic,
             "CODE_HUMAN_MEDIC_TEND_TO_DEAD",
@@ -570,6 +469,8 @@ end
 function IsDynamicSceneSafe()
     return SceneDirector.State == "SAFE"
         or SceneDirector.State == "IDLE"
+        or SceneDirector.State
+            == "SUSPECT_ARRESTED"
 end
 
 function GetDynamicSceneObjective()
@@ -589,9 +490,8 @@ function StartDynamicScene(dispatch)
         return
     end
 
-    local variant = selectVariant(
-        dispatch.type
-    )
+    local variant =
+        selectVariant(dispatch.type)
 
     SceneDirector.Variant = variant
 
@@ -608,7 +508,10 @@ function StartDynamicScene(dispatch)
         spawnRobbery(dispatch, variant)
 
     elseif dispatch.type == "DISTURBANCE" then
-        spawnDisturbance(dispatch, variant)
+        spawnDisturbance(
+            dispatch,
+            variant
+        )
 
     elseif dispatch.type
         == "TRAFFIC_ACCIDENT" then
@@ -624,39 +527,14 @@ function StartDynamicScene(dispatch)
 end
 
 function CleanupDynamicScene()
-    for _, blip in ipairs(
-        SceneDirector.Blips or {}
-    ) do
-        if DoesBlipExist(blip) then
-            RemoveBlip(blip)
-        end
-    end
-
-    for _, entity in ipairs(
-        SceneDirector.Entities or {}
-    ) do
-        if DoesEntityExist(entity) then
-            if IsEntityAPed(entity) then
-                SetBlockingOfNonTemporaryEvents(
-                    entity,
-                    false
-                )
-
-                ClearPedTasks(entity)
-                SetEntityAsNoLongerNeeded(entity)
-
-            elseif IsEntityAVehicle(entity) then
-                SetVehicleSiren(entity, false)
-                SetEntityAsNoLongerNeeded(entity)
-            end
-        end
-    end
+    EntityManager.CleanupGroup(
+        SCENE_GROUP,
+        false
+    )
 
     SceneDirector.State = "IDLE"
     SceneDirector.Variant = nil
     SceneDirector.Objective = nil
-    SceneDirector.Entities = {}
-    SceneDirector.Blips = {}
     SceneDirector.Suspect = nil
     SceneDirector.Fighters = nil
     SceneDirector.StartedAt = 0
@@ -698,17 +576,12 @@ CreateThread(function()
                 )
 
             else
-                local playerCoords =
-                    GetEntityCoords(
-                        PlayerPedId()
-                    )
+                local distance = #(
+                    GetEntityCoords(PlayerPedId())
+                    - GetEntityCoords(suspect)
+                )
 
-                local suspectCoords =
-                    GetEntityCoords(suspect)
-
-                if #(playerCoords - suspectCoords)
-                    >= 120.0 then
-
+                if distance >= 120.0 then
                     setSceneState(
                         "SAFE",
                         "El sospechoso escapó. Entreviste al testigo."

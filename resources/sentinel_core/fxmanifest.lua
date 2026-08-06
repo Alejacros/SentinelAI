@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'Alejacros'
 description 'Sentinel AI Police Career Simulator'
-version '0.7.0-prealpha'
+version '0.8.0-prealpha'
 
 ui_page 'html/index.html'
 
@@ -21,6 +21,7 @@ client_scripts {
 
     'client/bootstrap.lua',
 
+    'client/managers/EntityManager.lua',
     'client/managers/PlayerManager.lua',
     'client/managers/CareerManager.lua',
 
