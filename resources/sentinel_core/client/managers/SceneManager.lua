@@ -5,6 +5,9 @@ local witnessModels = {
     "a_f_y_tourist_01"
 }
 
+local sceneDormant = false
+local dynamicSceneStarted = false
+
 local function loadModel(model)
     RequestModel(model)
 
@@ -22,11 +25,12 @@ local function loadModel(model)
 end
 
 local function drawWorldText(coords, text)
-    local visible, screenX, screenY = World3dToScreen2d(
-        coords.x,
-        coords.y,
-        coords.z
-    )
+    local visible, screenX, screenY =
+        World3dToScreen2d(
+            coords.x,
+            coords.y,
+            coords.z
+        )
 
     if not visible then
         return
@@ -34,7 +38,6 @@ local function drawWorldText(coords, text)
 
     SetTextScale(0.36, 0.36)
     SetTextFont(4)
-    SetTextProportional(true)
     SetTextColour(255, 220, 0, 255)
     SetTextCentre(true)
     SetTextOutline()
@@ -57,9 +60,10 @@ function CleanupCrimeScene()
         local npc = PlayerData.SceneNPC
 
         FreezeEntityPosition(npc, false)
-        SetBlockingOfNonTemporaryEvents(npc, false)
         SetEntityInvincible(npc, false)
+        SetEntityCanBeDamaged(npc, true)
         SetPedCanRagdoll(npc, true)
+        SetBlockingOfNonTemporaryEvents(npc, false)
 
         ClearPedTasks(npc)
         TaskWanderStandard(npc, 10.0, 10)
@@ -69,104 +73,92 @@ function CleanupCrimeScene()
     PlayerData.SceneBlip = nil
     PlayerData.SceneNPC = nil
 
-    CleanupDynamicScene()
+    sceneDormant = false
+    dynamicSceneStarted = false
+
+    if CleanupDynamicScene then
+        CleanupDynamicScene()
+    end
 end
 
-function SpawnCrimeScene(dispatch)
-    if not dispatch or not dispatch.location then
-        Sentinel.Notify(
-            "ERROR",
-            "No fue posible crear la escena.",
-            {255, 80, 80}
-        )
+function SpawnCrimeScene(dispatch, dormant)
+    if PlayerData.SceneNPC
+        and DoesEntityExist(PlayerData.SceneNPC) then
 
-        return false
+        return true
     end
 
-    CleanupCrimeScene()
+    local witnessPosition =
+        SceneBuilder.GetWitnessPosition()
 
-    local playerPed = PlayerPedId()
-    local playerCoords = GetEntityCoords(playerPed)
+    local layout =
+        SceneBuilder.GetLayout()
 
-    local spawnPosition = GetOffsetFromEntityInWorldCoords(
-        playerPed,
-        0.0,
-        4.0,
-        0.0
-    )
+    if not witnessPosition or not layout then
+        layout = SceneBuilder.Build(dispatch)
+        witnessPosition =
+            layout
+            and layout.witness
+            and layout.witness.position
+            or nil
+    end
+
+    if not witnessPosition then
+        return false
+    end
 
     local modelName =
         witnessModels[math.random(#witnessModels)]
 
-    local model = GetHashKey(modelName)
+    local model =
+        GetHashKey(modelName)
 
     if not loadModel(model) then
-        Sentinel.Notify(
-            "ERROR",
-            "No fue posible cargar al testigo.",
-            {255, 80, 80}
-        )
-
         return false
     end
 
     RequestCollisionAtCoord(
-        spawnPosition.x,
-        spawnPosition.y,
-        playerCoords.z
+        witnessPosition.x,
+        witnessPosition.y,
+        witnessPosition.z
     )
 
     local npc = CreatePed(
         4,
         model,
-        spawnPosition.x,
-        spawnPosition.y,
-        playerCoords.z,
-        GetEntityHeading(playerPed) + 180.0,
+        witnessPosition.x,
+        witnessPosition.y,
+        witnessPosition.z,
+        layout.witness.heading or 0.0,
         false,
         false
     )
 
-    if npc == 0 or not DoesEntityExist(npc) then
-        Sentinel.Notify(
-            "ERROR",
-            "No fue posible crear al testigo.",
-            {255, 80, 80}
-        )
+    if npc == 0
+        or not DoesEntityExist(npc) then
 
+        SetModelAsNoLongerNeeded(model)
         return false
     end
 
-    SetEntityAsMissionEntity(npc, true, true)
-
-    SetEntityCoordsNoOffset(
+    SetEntityAsMissionEntity(
         npc,
-        spawnPosition.x,
-        spawnPosition.y,
-        playerCoords.z,
-        false,
-        false,
-        false
+        true,
+        true
     )
 
     SetEntityInvincible(npc, true)
     SetEntityCanBeDamaged(npc, false)
-    SetBlockingOfNonTemporaryEvents(npc, true)
     SetPedCanRagdoll(npc, false)
+    SetBlockingOfNonTemporaryEvents(npc, true)
     FreezeEntityPosition(npc, true)
 
-    TaskStartScenarioInPlace(
-        npc,
-        "WORLD_HUMAN_STAND_IMPATIENT",
-        0,
-        true
-    )
-
-    local blip = AddBlipForEntity(npc)
+    local blip =
+        AddBlipForEntity(npc)
 
     SetBlipSprite(blip, 280)
     SetBlipColour(blip, 1)
-    SetBlipScale(blip, 1.15)
+    SetBlipScale(blip, 1.10)
     SetBlipAsShortRange(blip, false)
 
     BeginTextCommandSetBlipName("STRING")
@@ -176,15 +168,60 @@ function SpawnCrimeScene(dispatch)
     PlayerData.SceneNPC = npc
     PlayerData.SceneBlip = blip
 
+    sceneDormant = dormant == true
+
+    SetEntityVisible(
+        npc,
+        not sceneDormant,
+        false
+    )
+
     SetModelAsNoLongerNeeded(model)
+
+    if not sceneDormant then
+        ActivateCrimeScene()
+    end
+
+    return true
+end
+
+function ActivateCrimeScene()
+    if not PlayerData.SceneNPC
+        or not DoesEntityExist(PlayerData.SceneNPC) then
+
+        return false
+    end
+
+    SetEntityVisible(
+        PlayerData.SceneNPC,
+        true,
+        false
+    )
+
+    TaskStartScenarioInPlace(
+        PlayerData.SceneNPC,
+        "WORLD_HUMAN_STAND_IMPATIENT",
+        0,
+        true
+    )
+
+    sceneDormant = false
+
+    if not dynamicSceneStarted
+        and PlayerData.CurrentDispatch then
+
+        StartDynamicScene(
+            PlayerData.CurrentDispatch
+        )
+
+        dynamicSceneStarted = true
+    end
 
     Sentinel.Notify(
         "CENTRAL",
-        "Testigo localizado. Busque el icono rojo y el marcador amarillo.",
+        "Testigo localizado. Busque el marcador amarillo.",
         {255, 220, 0}
     )
-
-    StartDynamicScene(dispatch)
 
     return true
 end
@@ -193,7 +230,8 @@ CreateThread(function()
     while true do
         local sleep = 500
 
-        if PlayerData.SceneNPC
+        if not sceneDormant
+            and PlayerData.SceneNPC
             and DoesEntityExist(PlayerData.SceneNPC) then
 
             local npcCoords =
@@ -213,19 +251,10 @@ CreateThread(function()
                     npcCoords.x,
                     npcCoords.y,
                     npcCoords.z + 2.2,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    180.0,
-                    0.0,
-                    0.55,
-                    0.55,
-                    0.55,
-                    255,
-                    220,
-                    0,
-                    255,
+                    0.0, 0.0, 0.0,
+                    0.0, 180.0, 0.0,
+                    0.55, 0.55, 0.55,
+                    255, 220, 0, 255,
                     false,
                     true,
                     2,

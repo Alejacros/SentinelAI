@@ -1,3 +1,5 @@
+local EVIDENCE_GROUP = "active_evidence"
+
 local activeEvidence = nil
 local evidenceLocked = false
 
@@ -9,87 +11,213 @@ local evidenceTypes = {
     {
         name = "Paquete sospechoso",
         model = "prop_cs_package_01"
-    },
-    {
-        name = "Teléfono celular",
-        model = "prop_npc_phone_02"
     }
 }
 
-local function notify(message)
+local function notify(message, color)
     Sentinel.Notify(
         "EVIDENCIA",
         message,
-        {0, 220, 255}
+        color or {0, 220, 255}
     )
 end
 
-local function removeEvidence()
-    if activeEvidence
-        and activeEvidence.object
-        and DoesEntityExist(activeEvidence.object) then
-
-        DeleteEntity(activeEvidence.object)
-    end
-
-    activeEvidence = nil
+local function isValidPosition(coords)
+    return coords
+        and coords.x
+        and coords.y
+        and coords.z
+        and coords.z > -50.0
 end
 
-function SpawnEvidence()
-    removeEvidence()
-    evidenceLocked = false
+local function getGroundPosition(coords)
+    if not isValidPosition(coords) then
+        return nil
+    end
 
+    RequestCollisionAtCoord(
+        coords.x,
+        coords.y,
+        coords.z
+    )
+
+    for height = 10.0, 100.0, 10.0 do
+        local found, groundZ = GetGroundZFor_3dCoord(
+            coords.x,
+            coords.y,
+            coords.z + height,
+            false
+        )
+
+        if found then
+            return vector3(
+                coords.x,
+                coords.y,
+                groundZ + 0.03
+            )
+        end
+    end
+
+    return nil
+end
+
+local function getEvidenceCenter()
+    if PlayerData.SceneNPC
+        and DoesEntityExist(PlayerData.SceneNPC) then
+
+        return GetEntityCoords(
+            PlayerData.SceneNPC
+        )
+    end
+
+    if PlayerData.CurrentDispatch
+        and PlayerData.CurrentDispatch.location then
+
+        return PlayerData.CurrentDispatch.location
+    end
+
+    return GetEntityCoords(PlayerPedId())
+end
+
+local function findEvidencePosition()
+    local center = getEvidenceCenter()
+
+    if SpawnPointManager
+        and SpawnPointManager.FindSafeEvidencePosition then
+
+        local safePosition =
+            SpawnPointManager.FindSafeEvidencePosition(
+                center,
+                {}
+            )
+
+        local groundedPosition =
+            getGroundPosition(safePosition)
+
+        if groundedPosition
+            and #(groundedPosition - center) <= 15.0 then
+
+            return groundedPosition
+        end
+    end
+
+    -- Alternativa segura: delante del jugador.
     local playerPed = PlayerPedId()
 
-    local spawnPosition =
+    local fallback =
         GetOffsetFromEntityInWorldCoords(
             playerPed,
-            1.5,
+            0.0,
             2.0,
             0.0
         )
 
-    local evidenceData =
-        evidenceTypes[math.random(#evidenceTypes)]
+    return getGroundPosition(fallback)
+        or vector3(
+            fallback.x,
+            fallback.y,
+            GetEntityCoords(playerPed).z
+        )
+end
 
-    local object = EntityManager.SpawnObject({
-        model = evidenceData.model,
-        coords = spawnPosition,
-        freeze = true,
-        placeOnGround = true,
-        group = "active_evidence"
-    })
+function RemoveActiveEvidence()
+    if EntityManager then
+        EntityManager.CleanupGroup(
+            EVIDENCE_GROUP,
+            true
+        )
+    end
 
-    if not object or not DoesEntityExist(object) then
+    activeEvidence = nil
+    evidenceLocked = false
+end
+
+function SpawnEvidence()
+    RemoveActiveEvidence()
+
+    local evidencePosition =
+        findEvidencePosition()
+
+    if not evidencePosition then
         Sentinel.Notify(
             "ERROR",
-            "No fue posible generar la evidencia.",
+            "No fue posible encontrar un punto seguro para la evidencia.",
             {255, 80, 80}
         )
 
         return false
     end
 
+    local evidenceData =
+        evidenceTypes[
+            math.random(#evidenceTypes)
+        ]
+
+    local object =
+        EntityManager.SpawnObject({
+            model = evidenceData.model,
+            coords = evidencePosition,
+            freeze = true,
+            placeOnGround = true,
+            group = EVIDENCE_GROUP
+        })
+
+    if not object
+        or not DoesEntityExist(object) then
+
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible crear el objeto de evidencia.",
+            {255, 80, 80}
+        )
+
+        print(
+            "[Sentinel AI] Falló SpawnEvidence: "
+                .. evidenceData.model
+        )
+
+        return false
+    end
+
+    local finalCoords =
+        GetEntityCoords(object)
+
+    local blip =
+        EntityManager.CreateCoordinateBlip(
+            finalCoords,
+            {
+                name = "Evidencia",
+                sprite = 1,
+                colour = 3,
+                scale = 0.75,
+                shortRange = false,
+                route = false,
+                group = EVIDENCE_GROUP
+            }
+        )
+
     activeEvidence = {
         object = object,
+        blip = blip,
         name = evidenceData.name
     }
 
     notify(
-        "Nueva evidencia localizada. Busque el marcador azul."
+        "Evidencia localizada. Busque el icono y marcador azul."
+    )
+
+    print(
+        (
+            "[Sentinel AI] Evidencia creada: %s | %.2f %.2f %.2f"
+        ):format(
+            evidenceData.name,
+            finalCoords.x,
+            finalCoords.y,
+            finalCoords.z
+        )
     )
 
     return true
-end
-
-function RemoveActiveEvidence()
-    EntityManager.CleanupGroup(
-        "active_evidence",
-        true
-    )
-
-    activeEvidence = nil
-    evidenceLocked = false
 end
 
 local function closeCaseWithoutCustody()
@@ -106,7 +234,9 @@ local function closeCaseWithoutCustody()
 end
 
 local function continueWithCustody()
-    local started = StartCustodyTransport()
+    local started =
+        StartCustodyTransport
+        and StartCustodyTransport()
 
     if not started then
         closeCaseWithoutCustody()
@@ -137,23 +267,23 @@ CreateThread(function()
             local distance =
                 #(playerCoords - objectCoords)
 
-            if distance <= 40.0 then
+            if distance <= 100.0 then
                 sleep = 0
 
                 DrawMarker(
                     2,
                     objectCoords.x,
                     objectCoords.y,
-                    objectCoords.z + 0.8,
+                    objectCoords.z + 0.75,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
                     180.0,
                     0.0,
-                    0.35,
-                    0.35,
-                    0.35,
+                    0.45,
+                    0.45,
+                    0.45,
                     0,
                     220,
                     255,
@@ -167,7 +297,7 @@ CreateThread(function()
                     false
                 )
 
-                if distance <= 1.7 then
+                if distance <= 2.0 then
                     BeginTextCommandDisplayHelp("STRING")
 
                     AddTextComponentSubstringPlayerName(
@@ -189,21 +319,24 @@ CreateThread(function()
                         local evidenceName =
                             activeEvidence.name
 
-                        notify(
+                        if not AddEvidenceToCurrentCase(
                             evidenceName
-                                .. " recogido correctamente."
-                        )
+                        ) then
 
-                        if not AddEvidenceToCurrentCase(evidenceName) then
                             Sentinel.Notify(
                                 "ERROR",
-                                "No existe un caso activo para guardar la evidencia.",
+                                "No existe un expediente activo.",
                                 {255, 80, 80}
                             )
 
                             evidenceLocked = false
                             return
                         end
+
+                        notify(
+                            evidenceName
+                                .. " recogido correctamente."
+                        )
 
                         RemoveActiveEvidence()
 

@@ -1,6 +1,12 @@
 local dispatchDelay = 15000
 local nextDispatchAt = nil
 
+local lastDispatchIndex = nil
+local lastLocationByType = {}
+
+local scenePrepared = false
+local sceneSpawned = false
+
 local function removeDispatchBlip()
     if PlayerData.DispatchBlip
         and DoesBlipExist(PlayerData.DispatchBlip) then
@@ -17,24 +23,119 @@ local function resetDispatch()
 
     PlayerData.CurrentDispatch = nil
     nextDispatchAt = nil
+
+    scenePrepared = false
+    sceneSpawned = false
+
+    if SceneBuilder then
+        SceneBuilder.Reset()
+    end
+end
+
+local function selectDifferentIndex(count, previousIndex)
+    if count <= 1 then
+        return 1
+    end
+
+    local selectedIndex
+
+    repeat
+        selectedIndex = math.random(1, count)
+    until selectedIndex ~= previousIndex
+
+    return selectedIndex
+end
+
+local function buildDispatchInstance(definition)
+    if type(definition) ~= "table" then
+        return nil
+    end
+
+    local locations = definition.locations
+
+    if type(locations) ~= "table"
+        or #locations == 0 then
+
+        if definition.location then
+            return {
+                code = definition.code,
+                type = definition.type,
+                title = definition.title,
+                location = definition.location,
+                locationIndex = 1
+            }
+        end
+
+        return nil
+    end
+
+    local previousLocation =
+        lastLocationByType[definition.type]
+
+    local locationIndex =
+        selectDifferentIndex(
+            #locations,
+            previousLocation
+        )
+
+    lastLocationByType[definition.type] =
+        locationIndex
+
+    return {
+        code = definition.code or "000",
+        type = definition.type or "GENERIC",
+        title = definition.title
+            or "Incidente sin identificar",
+
+        location = locations[locationIndex],
+        locationIndex = locationIndex
+    }
+end
+
+local function selectRandomDispatch()
+    if type(Dispatches) ~= "table"
+        or #Dispatches == 0 then
+
+        return nil
+    end
+
+    local dispatchIndex =
+        selectDifferentIndex(
+            #Dispatches,
+            lastDispatchIndex
+        )
+
+    lastDispatchIndex = dispatchIndex
+
+    return buildDispatchInstance(
+        Dispatches[dispatchIndex]
+    )
 end
 
 local function sendRandomDispatch()
-    if not Dispatches or #Dispatches == 0 then
+    local selectedDispatch =
+        selectRandomDispatch()
+
+    if not selectedDispatch then
         Sentinel.Notify(
             "ERROR",
-            "No hay incidentes configurados.",
+            "No hay incidentes válidos configurados.",
             {255, 80, 80}
         )
 
-        return
+        PlayerData.DispatchState = "WAITING"
+
+        nextDispatchAt =
+            GetGameTimer() + dispatchDelay
+
+        return false
     end
 
-    local selectedDispatch =
-        Dispatches[math.random(#Dispatches)]
+    PlayerData.CurrentDispatch =
+        selectedDispatch
 
-    PlayerData.CurrentDispatch = selectedDispatch
-    PlayerData.DispatchState = "PENDING"
+    PlayerData.DispatchState =
+        "PENDING"
 
     Sentinel.Notify(
         "CENTRAL",
@@ -46,36 +147,11 @@ local function sendRandomDispatch()
         ),
         {255, 80, 80}
     )
+
+    return true
 end
 
-local function acceptDispatch()
-    local incident = PlayerData.CurrentDispatch
-
-    if not incident then
-        Sentinel.Notify(
-            "ERROR",
-            "No existe un despacho para aceptar.",
-            {255, 80, 80}
-        )
-
-        return
-    end
-
-    -- Aquí se crea oficialmente el caso.
-    local caseCreated = CreateCurrentCase(incident)
-
-    if not caseCreated then
-        Sentinel.Notify(
-            "ERROR",
-            "No fue posible crear el expediente del caso.",
-            {255, 80, 80}
-        )
-
-        return
-    end
-
-    PlayerData.DispatchState = "EN_ROUTE"
-
+local function createDispatchBlip(incident)
     local blip = AddBlipForCoord(
         incident.location.x,
         incident.location.y,
@@ -85,6 +161,7 @@ local function acceptDispatch()
     SetBlipSprite(blip, 280)
     SetBlipColour(blip, 1)
     SetBlipScale(blip, 0.9)
+    SetBlipAsShortRange(blip, false)
     SetBlipRoute(blip, true)
     SetBlipRouteColour(blip, 1)
 
@@ -105,26 +182,61 @@ local function acceptDispatch()
         incident.location.x,
         incident.location.y
     )
+end
+
+local function prepareScene(incident)
+    CreateThread(function()
+        local layout =
+            SceneBuilder.Build(incident)
+
+        scenePrepared = layout ~= nil
+
+        if scenePrepared then
+            Sentinel.Notify(
+                "CENTRAL",
+                "Escena validada. Unidades continúan en ruta.",
+                {90, 190, 255}
+            )
+        end
+    end)
+end
+
+local function acceptDispatch()
+    local incident =
+        PlayerData.CurrentDispatch
+
+    if not incident
+        or not incident.location then
+
+        return false
+    end
+
+    if not CreateCurrentCase(incident) then
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible crear el expediente.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    PlayerData.DispatchState =
+        "EN_ROUTE"
+
+    scenePrepared = false
+    sceneSpawned = false
+
+    createDispatchBlip(incident)
+    prepareScene(incident)
 
     Sentinel.Notify(
         "CENTRAL",
-        "Caso creado. GPS actualizado. Diríjase al incidente.",
+        "Expediente creado. GPS actualizado.",
         {0, 255, 120}
     )
 
-    local currentCase = GetCurrentCase()
-
-    if currentCase then
-        print(
-            (
-                "[Sentinel AI] Expediente #%04d activo: Código %s - %s"
-            ):format(
-                currentCase.id,
-                currentCase.code,
-                currentCase.title
-            )
-        )
-    end
+    return true
 end
 
 function CompleteCurrentDispatch()
@@ -135,8 +247,11 @@ function CompleteCurrentDispatch()
     resetDispatch()
 
     if PlayerData.OnDuty then
-        PlayerData.DispatchState = "WAITING"
-        nextDispatchAt = GetGameTimer() + dispatchDelay
+        PlayerData.DispatchState =
+            "WAITING"
+
+        nextDispatchAt =
+            GetGameTimer() + dispatchDelay
 
         Sentinel.Notify(
             "CENTRAL",
@@ -144,7 +259,8 @@ function CompleteCurrentDispatch()
             {0, 255, 120}
         )
     else
-        PlayerData.DispatchState = "OFF_DUTY"
+        PlayerData.DispatchState =
+            "OFF_DUTY"
     end
 
     return true
@@ -154,20 +270,29 @@ CreateThread(function()
     while true do
         Wait(250)
 
-        if PlayerData.DispatchState == "OFF_DUTY" then
+        if PlayerData.DispatchState
+            == "OFF_DUTY" then
+
             resetDispatch()
 
-            if GetCurrentCase() then
+            if GetCurrentCase
+                and GetCurrentCase() then
+
                 CancelCurrentCase()
             end
 
-        elseif PlayerData.DispatchState == "WAITING" then
+        elseif PlayerData.DispatchState
+            == "WAITING" then
+
             if not nextDispatchAt then
                 nextDispatchAt =
-                    GetGameTimer() + dispatchDelay
+                    GetGameTimer()
+                    + dispatchDelay
             end
 
-            if GetGameTimer() >= nextDispatchAt then
+            if GetGameTimer()
+                >= nextDispatchAt then
+
                 nextDispatchAt = nil
                 sendRandomDispatch()
             end
@@ -181,8 +306,12 @@ CreateThread(function()
     while true do
         Wait(0)
 
-        if PlayerData.DispatchState == "PENDING"
-            and IsControlJustPressed(0, 246) then -- Y
+        if PlayerData.DispatchState
+                == "PENDING"
+            and IsControlJustPressed(
+                0,
+                246
+            ) then
 
             acceptDispatch()
         end
@@ -191,13 +320,16 @@ end)
 
 CreateThread(function()
     while true do
-        Wait(500)
+        Wait(250)
 
-        if PlayerData.DispatchState == "EN_ROUTE"
+        if PlayerData.DispatchState
+                == "EN_ROUTE"
             and PlayerData.CurrentDispatch then
 
             local playerCoords =
-                GetEntityCoords(PlayerPedId())
+                GetEntityCoords(
+                    PlayerPedId()
+                )
 
             local incidentCoords =
                 PlayerData.CurrentDispatch.location
@@ -205,19 +337,55 @@ CreateThread(function()
             local distance =
                 #(playerCoords - incidentCoords)
 
-            if distance <= 20.0 then
+            if distance <= 180.0
+                and not scenePrepared then
+
+                prepareScene(
+                    PlayerData.CurrentDispatch
+                )
+            end
+
+            if distance <= 150.0
+                and scenePrepared
+                and not sceneSpawned then
+
+                sceneSpawned =
+                    SpawnCrimeScene(
+                        PlayerData.CurrentDispatch,
+                        true
+                    ) ~= false
+            end
+
+            if distance <= 25.0 then
                 removeDispatchBlip()
 
-                PlayerData.DispatchState = "ON_SCENE"
+                PlayerData.DispatchState =
+                    "ON_SCENE"
+
+                if not sceneSpawned then
+                    if not scenePrepared then
+                        SceneBuilder.Build(
+                            PlayerData.CurrentDispatch
+                        )
+
+                        scenePrepared = true
+                    end
+
+                    sceneSpawned =
+                        SpawnCrimeScene(
+                            PlayerData.CurrentDispatch,
+                            false
+                        ) ~= false
+                end
+
+                if ActivateCrimeScene then
+                    ActivateCrimeScene()
+                end
 
                 Sentinel.Notify(
                     "CENTRAL",
-                    "Unidad en escena. Investigue el incidente.",
+                    "Unidad en escena. Evalúe la situación.",
                     {0, 255, 0}
-                )
-
-                SpawnCrimeScene(
-                    PlayerData.CurrentDispatch
                 )
             end
         end
