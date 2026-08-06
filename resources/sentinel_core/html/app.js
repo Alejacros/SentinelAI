@@ -1,8 +1,11 @@
 const mdt = document.getElementById("mdt");
 const closeButton = document.getElementById("closeButton");
 
-const navigationButtons = document.querySelectorAll(".nav-button");
-const pages = document.querySelectorAll("[data-page-content]");
+const navigationButtons =
+    document.querySelectorAll(".nav-button");
+
+const pages =
+    document.querySelectorAll("[data-page-content]");
 
 const pageTitle = document.getElementById("pageTitle");
 
@@ -23,6 +26,9 @@ const activeCase = document.getElementById("activeCase");
 const sidebarUnit = document.getElementById("sidebarUnit");
 const sidebarStatus = document.getElementById("sidebarStatus");
 
+const historyCount = document.getElementById("historyCount");
+const caseHistoryList = document.getElementById("caseHistoryList");
+
 const pageTitles = {
     dashboard: "Dashboard",
     cases: "Historial de casos",
@@ -33,13 +39,16 @@ const pageTitles = {
 };
 
 function postNui(endpoint, payload = {}) {
-    return fetch(`https://${GetParentResourceName()}/${endpoint}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
+    return fetch(
+        `https://${GetParentResourceName()}/${endpoint}`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        }
+    );
 }
 
 function closeMdt() {
@@ -62,21 +71,119 @@ function selectPage(pageName) {
     });
 
     pageTitle.textContent =
-        pageTitles[pageName] ?? "Sentinel MDT";
+        pageTitles[pageName] || "Sentinel MDT";
 }
 
-function updateDashboard(data) {
-    rank.textContent = data.rank;
-    unit.textContent = data.unit;
-    xp.textContent = `${data.xp} XP`;
-    cases.textContent = data.completedCases;
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
 
-    status.textContent = data.status;
-    progress.textContent = `${data.xp} XP acumulados`;
-    statusBadge.textContent = data.status;
+function formatDuration(seconds) {
+    const total = Number(seconds) || 0;
+    const minutes = Math.floor(total / 60);
+    const remainder = total % 60;
 
-    sidebarUnit.textContent = data.unit;
-    sidebarStatus.textContent = data.status;
+    return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function renderCaseHistory(rawHistory) {
+    const history = Array.isArray(rawHistory)
+        ? rawHistory
+        : Object.values(rawHistory || {});
+
+    if (!historyCount || !caseHistoryList) {
+        return;
+    }
+
+    historyCount.textContent =
+        `${history.length} caso${history.length === 1 ? "" : "s"}`;
+
+    if (history.length === 0) {
+        caseHistoryList.innerHTML = `
+            <div class="empty-history">
+                No hay casos archivados en esta sesión.
+            </div>
+        `;
+
+        return;
+    }
+
+    caseHistoryList.innerHTML = history
+        .map((caseData) => {
+            const evidenceList =
+                Array.isArray(caseData.evidence)
+                    ? caseData.evidence
+                    : Object.values(caseData.evidence || {});
+
+            const evidence =
+                evidenceList.length > 0
+                    ? evidenceList.map(escapeHtml).join(", ")
+                    : "Sin evidencia registrada";
+
+            const id =
+                String(caseData.id || 0).padStart(4, "0");
+
+            return `
+                <article class="case-history-item">
+                    <div class="case-history-header">
+                        <div>
+                            <span>CASO #${id}</span>
+
+                            <h4>
+                                Código ${escapeHtml(caseData.code)}
+                                · ${escapeHtml(caseData.title)}
+                            </h4>
+                        </div>
+
+                        <strong>
+                            +${Number(caseData.xp) || 0} XP
+                        </strong>
+                    </div>
+
+                    <div class="case-history-details">
+                        <p>
+                            <b>Evidencia:</b> ${evidence}
+                        </p>
+
+                        <p>
+                            <b>Duración:</b>
+                            ${formatDuration(caseData.durationSeconds)}
+                        </p>
+
+                        <p>
+                            <b>Cerrado:</b>
+                            ${escapeHtml(caseData.completedAt || "Sin fecha")}
+                        </p>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+function updateMdt(data = {}) {
+    rank.textContent = data.rank || "Cadete";
+    unit.textContent = data.unit || "Sin asignar";
+    xp.textContent = `${Number(data.xp) || 0} XP`;
+    cases.textContent = Number(data.completedCases) || 0;
+
+    status.textContent = data.status || "Sin estado";
+    progress.textContent =
+        `${Number(data.xp) || 0} XP acumulados`;
+
+    statusBadge.textContent =
+        data.status || "Sin estado";
+
+    sidebarUnit.textContent =
+        data.unit || "Sin asignar";
+
+    sidebarStatus.textContent =
+        data.status || "Sin estado";
 
     if (data.dispatch) {
         activeCase.classList.remove("empty");
@@ -92,28 +199,28 @@ function updateDashboard(data) {
     } else {
         activeCase.classList.add("empty");
 
-        caseCode.textContent =
-            "SIN DESPACHO";
-
+        caseCode.textContent = "SIN DESPACHO";
         caseTitle.textContent =
             "No hay un incidente activo";
 
         caseState.textContent =
             "Permanezca disponible para la central.";
     }
+
+    renderCaseHistory(data.caseHistory);
 }
 
 window.addEventListener("message", (event) => {
-    const message = event.data;
+    const message = event.data || {};
 
     if (message.action === "open") {
-        updateDashboard(message.data);
+        updateMdt(message.data);
         selectPage("dashboard");
         mdt.classList.remove("hidden");
     }
 
     if (message.action === "update") {
-        updateDashboard(message.data);
+        updateMdt(message.data);
     }
 
     if (message.action === "close") {

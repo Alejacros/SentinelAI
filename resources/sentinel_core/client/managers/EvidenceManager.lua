@@ -49,20 +49,21 @@ local function removeEvidence()
     end
 
     activeEvidence = nil
-    evidenceLocked = false
 end
 
 function SpawnEvidence()
     removeEvidence()
+    evidenceLocked = false
 
     local playerPed = PlayerPedId()
 
-    local spawnPosition = GetOffsetFromEntityInWorldCoords(
-        playerPed,
-        1.5,
-        2.0,
-        0.0
-    )
+    local spawnPosition =
+        GetOffsetFromEntityInWorldCoords(
+            playerPed,
+            1.5,
+            2.0,
+            0.0
+        )
 
     local evidenceData =
         evidenceTypes[math.random(#evidenceTypes)]
@@ -89,10 +90,7 @@ function SpawnEvidence()
         false
     )
 
-    if not object
-        or object == 0
-        or not DoesEntityExist(object) then
-
+    if object == 0 or not DoesEntityExist(object) then
         Sentinel.Notify(
             "ERROR",
             "No fue posible crear la evidencia.",
@@ -177,18 +175,43 @@ CreateThread(function()
 
                         evidenceLocked = true
 
-                        notify(
+                        local evidenceName =
                             activeEvidence.name
+
+                        notify(
+                            evidenceName
                                 .. " recogido correctamente."
                         )
+
+                        local evidenceAdded =
+                            AddEvidenceToCurrentCase(
+                                evidenceName
+                            )
+
+                        if not evidenceAdded then
+                            evidenceLocked = false
+                            return
+                        end
 
                         PlayerData.DispatchState = "REPORT"
 
                         removeEvidence()
                         CleanupCrimeScene()
 
-                        AwardXP(25)
+                        local earnedXP = 25
+
+                        local archived =
+                            CompleteCase(earnedXP)
+
+                        if not archived then
+                            evidenceLocked = false
+                            return
+                        end
+
+                        AwardXP(earnedXP)
                         CompleteCurrentDispatch()
+
+                        evidenceLocked = false
                     end
                 end
             end

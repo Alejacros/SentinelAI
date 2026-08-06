@@ -14,7 +14,6 @@ end
 
 local function resetDispatch()
     removeDispatchBlip()
-    CleanupCrimeScene()
 
     PlayerData.CurrentDispatch = nil
     nextDispatchAt = nil
@@ -27,21 +26,23 @@ local function sendRandomDispatch()
             "No hay incidentes configurados.",
             {255, 80, 80}
         )
+
         return
     end
 
-    PlayerData.CurrentDispatch =
+    local selectedDispatch =
         Dispatches[math.random(#Dispatches)]
 
+    PlayerData.CurrentDispatch = selectedDispatch
     PlayerData.DispatchState = "PENDING"
 
-    local incident = PlayerData.CurrentDispatch
-
     Sentinel.Notify(
-        "📻 CENTRAL",
-        ("Código %s - %s\nPulsa Y para aceptar."):format(
-            incident.code,
-            incident.title
+        "CENTRAL",
+        (
+            "Código %s - %s\nPulsa Y para aceptar."
+        ):format(
+            selectedDispatch.code,
+            selectedDispatch.title
         ),
         {255, 80, 80}
     )
@@ -51,6 +52,25 @@ local function acceptDispatch()
     local incident = PlayerData.CurrentDispatch
 
     if not incident then
+        Sentinel.Notify(
+            "ERROR",
+            "No existe un despacho para aceptar.",
+            {255, 80, 80}
+        )
+
+        return
+    end
+
+    -- Aquí se crea oficialmente el caso.
+    local caseCreated = CreateCurrentCase(incident)
+
+    if not caseCreated then
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible crear el expediente del caso.",
+            {255, 80, 80}
+        )
+
         return
     end
 
@@ -69,12 +89,14 @@ local function acceptDispatch()
     SetBlipRouteColour(blip, 1)
 
     BeginTextCommandSetBlipName("STRING")
+
     AddTextComponentString(
         ("Código %s - %s"):format(
             incident.code,
             incident.title
         )
     )
+
     EndTextCommandSetBlipName(blip)
 
     PlayerData.DispatchBlip = blip
@@ -86,14 +108,28 @@ local function acceptDispatch()
 
     Sentinel.Notify(
         "CENTRAL",
-        "GPS actualizado. Diríjase al incidente.",
+        "Caso creado. GPS actualizado. Diríjase al incidente.",
         {0, 255, 120}
     )
+
+    local currentCase = GetCurrentCase()
+
+    if currentCase then
+        print(
+            (
+                "[Sentinel AI] Expediente #%04d activo: Código %s - %s"
+            ):format(
+                currentCase.id,
+                currentCase.code,
+                currentCase.title
+            )
+        )
+    end
 end
 
 function CompleteCurrentDispatch()
     if PlayerData.DispatchState ~= "REPORT" then
-        return
+        return false
     end
 
     resetDispatch()
@@ -104,12 +140,14 @@ function CompleteCurrentDispatch()
 
         Sentinel.Notify(
             "CENTRAL",
-            "Informe recibido. Queda disponible para otro despacho.",
+            "Informe recibido. Disponible para otro despacho.",
             {0, 255, 120}
         )
     else
         PlayerData.DispatchState = "OFF_DUTY"
     end
+
+    return true
 end
 
 CreateThread(function()
@@ -118,9 +156,15 @@ CreateThread(function()
 
         if PlayerData.DispatchState == "OFF_DUTY" then
             resetDispatch()
+
+            if GetCurrentCase() then
+                CancelCurrentCase()
+            end
+
         elseif PlayerData.DispatchState == "WAITING" then
             if not nextDispatchAt then
-                nextDispatchAt = GetGameTimer() + dispatchDelay
+                nextDispatchAt =
+                    GetGameTimer() + dispatchDelay
             end
 
             if GetGameTimer() >= nextDispatchAt then

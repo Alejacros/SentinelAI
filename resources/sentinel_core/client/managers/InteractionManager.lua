@@ -1,4 +1,5 @@
 local interactionLocked = false
+local warningCooldown = 0
 
 local witnessStatements = {
     "Vi un vehículo salir a toda velocidad hacia el norte.",
@@ -7,11 +8,11 @@ local witnessStatements = {
     "No vi su rostro, pero llevaba ropa oscura."
 }
 
-local function showInteractionHelp()
+local function showHelp(message)
     BeginTextCommandDisplayHelp("STRING")
 
     AddTextComponentSubstringPlayerName(
-        "Pulsa ~INPUT_CONTEXT~ para hablar con el testigo."
+        message
     )
 
     EndTextCommandDisplayHelp(
@@ -27,11 +28,42 @@ local function interviewWitness()
         return
     end
 
+    if not IsDynamicSceneSafe() then
+        local currentTime = GetGameTimer()
+
+        if currentTime >= warningCooldown then
+            warningCooldown =
+                currentTime + 3000
+
+            Sentinel.Notify(
+                "CENTRAL",
+                GetDynamicSceneObjective(),
+                {255, 100, 80}
+            )
+        end
+
+        return
+    end
+
     interactionLocked = true
-    PlayerData.DispatchState = "EVIDENCE"
 
     local statement =
-        witnessStatements[math.random(#witnessStatements)]
+        witnessStatements[
+            math.random(#witnessStatements)
+        ]
+
+    if not AddWitnessToCurrentCase(statement) then
+        Sentinel.Notify(
+            "ERROR",
+            "No existe un expediente activo.",
+            {255, 80, 80}
+        )
+
+        interactionLocked = false
+        return
+    end
+
+    PlayerData.DispatchState = "EVIDENCE"
 
     Sentinel.Notify(
         "TESTIGO",
@@ -45,11 +77,13 @@ local function interviewWitness()
         {0, 255, 120}
     )
 
-    local evidenceCreated = SpawnEvidence()
+    local evidenceCreated =
+        SpawnEvidence()
 
     if not evidenceCreated then
         PlayerData.DispatchState = "REPORT"
 
+        CompleteCase(0)
         CleanupCrimeScene()
         CompleteCurrentDispatch()
     end
@@ -61,15 +95,22 @@ CreateThread(function()
     while true do
         local sleep = 500
 
-        if PlayerData.SceneNPC
-            and DoesEntityExist(PlayerData.SceneNPC)
-            and PlayerData.DispatchState == "ON_SCENE" then
+        if PlayerData.DispatchState
+                == "ON_SCENE"
+            and PlayerData.SceneNPC
+            and DoesEntityExist(
+                PlayerData.SceneNPC
+            ) then
 
             local npcCoords =
-                GetEntityCoords(PlayerData.SceneNPC)
+                GetEntityCoords(
+                    PlayerData.SceneNPC
+                )
 
             local playerCoords =
-                GetEntityCoords(PlayerPedId())
+                GetEntityCoords(
+                    PlayerPedId()
+                )
 
             local distance =
                 #(playerCoords - npcCoords)
@@ -77,37 +118,22 @@ CreateThread(function()
             if distance <= 40.0 then
                 sleep = 0
 
-                DrawMarker(
-                    2,
-                    npcCoords.x,
-                    npcCoords.y,
-                    npcCoords.z + 2.2,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    180.0,
-                    0.0,
-                    0.5,
-                    0.5,
-                    0.5,
-                    255,
-                    220,
-                    0,
-                    255,
-                    false,
-                    true,
-                    2,
-                    false,
-                    nil,
-                    nil,
-                    false
-                )
+                if distance <= 2.8 then
+                    if IsDynamicSceneSafe() then
+                        showHelp(
+                            "Pulsa ~INPUT_CONTEXT~ para hablar con el testigo."
+                        )
+                    else
+                        showHelp(
+                            "La escena no es segura. Controle la situación."
+                        )
+                    end
 
-                if distance <= 2.5 then
-                    showInteractionHelp()
+                    if IsControlJustPressed(
+                        0,
+                        38
+                    ) then
 
-                    if IsControlJustPressed(0, 38) then
                         interviewWitness()
                     end
                 end

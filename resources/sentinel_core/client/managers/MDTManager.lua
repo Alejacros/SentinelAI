@@ -10,6 +10,28 @@ local statusLabels = {
     REPORT = "Procesando informe"
 }
 
+local function serializeHistory()
+    local result = {}
+    local history = GetCaseHistory() or {}
+
+    for index, caseData in ipairs(history) do
+        result[index] = {
+            id = caseData.id or index,
+            code = caseData.code or "000",
+            title = caseData.title or "Incidente",
+            state = caseData.state or "COMPLETED",
+            witness = caseData.witness or "",
+            evidence = caseData.evidence or {},
+            xp = caseData.xp or 0,
+            startedAt = caseData.startedAt or "",
+            completedAt = caseData.completedAt or "",
+            durationSeconds = caseData.durationSeconds or 0
+        }
+    end
+
+    return result
+end
+
 local function buildMdtData()
     local dispatch = nil
 
@@ -20,20 +42,34 @@ local function buildMdtData()
         }
     end
 
+    local history = serializeHistory()
+
     return {
         rank = PlayerData.Rank or "Cadete",
         unit = PlayerData.Unit or "Sin asignar",
         xp = PlayerData.XP or 0,
         completedCases = PlayerData.CompletedCases or 0,
-        status = statusLabels[PlayerData.DispatchState] or "Sin estado",
-        dispatch = dispatch
+
+        status = statusLabels[PlayerData.DispatchState]
+            or "Sin estado",
+
+        dispatch = dispatch,
+        caseHistory = history,
+        caseHistoryCount = #history
     }
 end
 
-local function sendMdtUpdate(action)
+local function sendMdtData(action)
+    local data = buildMdtData()
+
+    print(
+        ("[Sentinel AI] Enviando MDT: %d casos archivados.")
+            :format(data.caseHistoryCount)
+    )
+
     SendNUIMessage({
         action = action,
-        data = buildMdtData()
+        data = data
     })
 end
 
@@ -43,8 +79,9 @@ local function openMdt()
     end
 
     mdtOpen = true
+
     SetNuiFocus(true, true)
-    sendMdtUpdate("open")
+    sendMdtData("open")
 end
 
 local function closeMdt()
@@ -53,6 +90,7 @@ local function closeMdt()
     end
 
     mdtOpen = false
+
     SetNuiFocus(false, false)
 
     SendNUIMessage({
@@ -60,7 +98,6 @@ local function closeMdt()
     })
 end
 
--- Usamos un comando nuevo para evitar la asignación antigua guardada en TAB.
 RegisterCommand("sentinel_tablet", function()
     if mdtOpen then
         closeMdt()
@@ -84,20 +121,22 @@ RegisterNUICallback("closeMdt", function(_, callback)
     })
 end)
 
+RegisterNUICallback("requestMdtData", function(_, callback)
+    callback(buildMdtData())
+end)
+
 CreateThread(function()
     while true do
         Wait(500)
 
         if mdtOpen then
-            sendMdtUpdate("update")
+            sendMdtData("update")
         end
     end
 end)
 
 AddEventHandler("onResourceStop", function(resourceName)
-    if resourceName ~= GetCurrentResourceName() then
-        return
+    if resourceName == GetCurrentResourceName() then
+        SetNuiFocus(false, false)
     end
-
-    SetNuiFocus(false, false)
 end)
