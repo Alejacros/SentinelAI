@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Sentinel MDT</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <main id="mdt" class="hidden">
+        <aside class="sidebar">
+            <header class="brand">
+                <span class="brand-icon">S</span>
+
+                <div>
+                    <p>LOS SANTOS POLICE</p>
+                    <h1>SENTINEL MDT</h1>
+                </div>
+            </header>
+
+            <nav class="navigation">
+                <button
+                    class="nav-button active"
+                    data-page="dashboard"
+                    type="button"
+                >
+                    Dashboard
+                </button>
+
+                <button
+                    class="nav-button"
+                    data-page="cases"
+                    type="button"
+                >
+                    Casos
+                </button>
+
+                <button
+                    class="nav-button"
+                    data-page="people"
+                    type="button"
+                >
+                    Personas
+                </button>
+
+                <button
+                    class="nav-button"
+                    data-page="vehicles"
+                    type="button"
+                >
+                    Vehículos
+                </button>
+
+                <button
+                    class="nav-button"
+                    data-page="evidence"
+                    type="button"
+                >
+                    Evidencias
+                </button>
+
+                <button
+                    class="nav-button"
+                    data-page="ai"
+                    type="button"
+                >
+                    Sentinel AI
+                </button>
+            </nav>
+
+            <footer class="sidebar-footer">
+                <p id="sidebarUnit">Sin unidad</p>
+                <span id="sidebarStatus">
+                    Fuera de servicio
+                </span>
+            </footer>
+        </aside>
+
+        <section class="workspace">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">
+                        TERMINAL POLICIAL SEGURA
+                    </p>
+
+                    <h2 id="pageTitle">
+                        Dashboard
+                    </h2>
+                </div>
+
+                <button
+                    id="closeButton"
+                    class="close-button"
+                    type="button"
+                >
+                    Cerrar
+                </button>
+            </header>
+
+            <section
+                id="dashboardPage"
+                class="page active"
+                data-page-content="dashboard"
+            >
+                <div class="summary-grid">
+                    <article class="summary-card">
+                        <span>Rango</span>
+                        <strong id="rank">
+                            Cadete
+                        </strong>
+                    </article>
+
+                    <article class="summary-card">
+                        <span>Unidad</span>
+                        <strong id="unit">
+                            Sin asignar
+                        </strong>
+                    </article>
+
+                    <article class="summary-card">
+                        <span>Experiencia</span>
+                        <strong id="xp">
+                            0 XP
+                        </strong>
+                    </article>
+
+                    <article class="summary-card">
+                        <span>Casos cerrados</span>
+                        <strong id="cases">
+                            0
+                        </strong>
+                    </article>
+                </div>
+
+                <div class="content-grid">
+                    <article class="panel">
+                        <div class="panel-heading">
+                            <div>
+                                <span class="panel-label">
+                                    ESTADO OPERATIVO
+                                </span>
+
+                                <h3>Situación actual</h3>
+                            </div>
+
+                            <span
+                                id="statusBadge"
+                                class="status-badge"
+                            >
+                                Fuera de servicio
+                            </span>
+                        </div>
+
+                        <div class="status-details">
+                            <div>
+                                <span>Estado</span>
+
+                                <strong id="status">
+                                    Fuera de servicio
+                                </strong>
+                            </div>
+
+                            <div>
+                                <span>
+                                    Progreso profesional
+                                </span>
+
+                                <strong id="progress">
+                                    0 XP acumulados
+                                </strong>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="panel">
+                        <div class="panel-heading">
+                            <div>
+                                <span class="panel-label">
+                                    DESPACHO
+                                </span>
+
+                                <h3>Caso actual</h3>
+                            </div>
+                        </div>
+
+                        <div
+                            id="activeCase"
+                            class="active-case empty"
+                        >
+                            <span id="caseCode">
+                                Sin despacho
+                            </span>
+
+                            <strong id="caseTitle">
+                                No hay un incidente activo
+                            </strong>
+
+                            <p id="caseState">
+                                Permanezca disponible para la central.
+                            </p>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section
+                class="page"
+                data-page-content="cases"
+            >
+                <article class="placeholder-panel">
+                    <span>CASOS</span>
+                    <h3>Historial de casos</h3>
+
+                    <p>
+                        Este módulo registrará los incidentes
+                        resueltos, evidencias y experiencia
+                        obtenida.
+                    </p>
+                </article>
+            </section>
+
+            <section
+                class="page"
+                data-page-content="people"
+            >
+                <article class="placeholder-panel">
+                    <span>PERSONAS</span>
+                    <h3>Consulta ciudadana</h3>
+
+                    <p>
+                        Próximamente: identidades,
+                        antecedentes y órdenes activas.
+                    </p>
+                </article>
+            </section>
+
+            <section
+                class="page"
+                data-page-content="vehicles"
+            >
+                <article class="placeholder-panel">
+                    <span>VEHÍCULOS</span>
+                    <h3>Consulta vehicular</h3>
+
+                    <p>
+                        Próximamente: matrículas,
+                        propietarios y reportes de robo.
+                    </p>
+                </article>
+            </section>
+
+            <section
+                class="page"
+                data-page-content="evidence"
+            >
+                <article class="placeholder-panel">
+                    <span>EVIDENCIAS</span>
+                    <h3>Cadena de custodia</h3>
+
+                    <p>
+                        Próximamente: objetos recolectados
+                        y resultados de laboratorio.
+                    </p>
+                </article>
+            </section>
+
+            <section
+                class="page"
+                data-page-content="ai"
+            >
+                <article class="placeholder-panel">
+                    <span>SENTINEL AI</span>
+                    <h3>Asistente operativo</h3>
+
+                    <p>
+                        Próximamente: análisis de incidentes
+                        y apoyo a la investigación.
+                    </p>
+                </article>
+            </section>
+
+            <footer class="workspace-footer">
+                <span>F7 para abrir la tablet</span>
+                <span>ESC para cerrar</span>
+                <span>Sentinel AI v0.3</span>
+            </footer>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

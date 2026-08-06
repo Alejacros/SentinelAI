@@ -1,26 +1,36 @@
 PlayerData = {
-
     OnDuty = false,
 
-    Unit = nil,
-
     Rank = "Cadete",
+    XP = 0,
+    CompletedCases = 0,
 
+    Unit = nil,
     Vehicle = nil,
 
+    DispatchState = "OFF_DUTY",
+    CurrentDispatch = nil,
+    DispatchBlip = nil,
+
     SceneNPC = nil,
+    SceneBlip = nil
+}
 
-    DispatchState = "OFF_DUTY"
-
+local unitPrefixes = {
+    "ADAM",
+    "BRAVO",
+    "CHARLIE",
+    "DELTA",
+    "EDWARD",
+    "FRANK",
+    "GEORGE",
+    "LINCOLN",
+    "VICTOR"
 }
 
 function AssignRandomUnit()
+    local prefix = unitPrefixes[math.random(#unitPrefixes)]
+    local number = math.random(1, 99)
 
-    local randomIndex = math.random(#Config.Units)
-
-    PlayerData.Unit = Config.Units[randomIndex]
-
+    PlayerData.Unit = string.format("%s-%02d", prefix, number)
 end
-
-PlayerData.Vehicle = nil
-PlayerData.SceneNPC = nil
