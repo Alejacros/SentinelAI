@@ -28,6 +28,10 @@ function CreateCurrentCase(dispatch)
         witness = nil,
         evidence = {},
 
+        suspect = {
+            outcome = nil
+        },
+
         xp = 0,
 
         startedAt = getGameDateTime(),
@@ -37,7 +41,8 @@ function CreateCurrentCase(dispatch)
         durationSeconds = 0
     }
 
-    SentinelCase.NextId = SentinelCase.NextId + 1
+    SentinelCase.NextId =
+        SentinelCase.NextId + 1
 
     print(
         ("[Sentinel AI] Caso #%d creado.")
@@ -53,7 +58,6 @@ end
 
 function AddWitnessToCurrentCase(statement)
     if not SentinelCase.Current then
-        print("[Sentinel AI] ERROR: no existe un caso actual.")
         return false
     end
 
@@ -65,10 +69,6 @@ end
 
 function AddEvidenceToCurrentCase(evidenceName)
     if not SentinelCase.Current then
-        print(
-            "[Sentinel AI] ERROR: no existe un caso para guardar evidencia."
-        )
-
         return false
     end
 
@@ -80,12 +80,20 @@ function AddEvidenceToCurrentCase(evidenceName)
     return true
 end
 
+function AddSuspectOutcomeToCurrentCase(outcome)
+    if not SentinelCase.Current then
+        return false
+    end
+
+    SentinelCase.Current.suspect = {
+        outcome = outcome
+    }
+
+    return true
+end
+
 function CompleteCase(xpAmount)
     if not SentinelCase.Current then
-        print(
-            "[Sentinel AI] ERROR: CompleteCase sin caso actual."
-        )
-
         Sentinel.Notify(
             "ERROR",
             "No existe un caso activo para archivar.",
@@ -95,45 +103,41 @@ function CompleteCase(xpAmount)
         return false
     end
 
-    local completedCase = SentinelCase.Current
+    local completedCase =
+        SentinelCase.Current
 
     completedCase.state = "COMPLETED"
-    completedCase.xp = tonumber(xpAmount) or 0
-    completedCase.completedAt = getGameDateTime()
+    completedCase.xp =
+        tonumber(xpAmount) or 0
 
-    completedCase.durationSeconds = math.max(
-        0,
-        math.floor(
-            (
-                GetGameTimer()
-                - (completedCase.startedTimer or GetGameTimer())
-            ) / 1000
-        )
-    )
+    completedCase.completedAt =
+        getGameDateTime()
 
-    local archived, result = pcall(
-        ArchiveCase,
-        completedCase
-    )
-
-    if not archived then
-        print(
-            "[Sentinel AI] ERROR archivando caso: "
-                .. tostring(result)
+    completedCase.durationSeconds =
+        math.max(
+            0,
+            math.floor(
+                (
+                    GetGameTimer()
+                    - (
+                        completedCase.startedTimer
+                        or GetGameTimer()
+                    )
+                ) / 1000
+            )
         )
 
+    local success, archived =
+        pcall(
+            ArchiveCase,
+            completedCase
+        )
+
+    if not success or archived ~= true then
         Sentinel.Notify(
             "ERROR",
-            "Falló el almacenamiento del caso. Revise F8.",
+            "No fue posible archivar el caso.",
             {255, 80, 80}
-        )
-
-        return false
-    end
-
-    if result ~= true then
-        print(
-            "[Sentinel AI] ERROR: ArchiveCase devolvió false."
         )
 
         return false
