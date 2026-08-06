@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# VSCode
+.vscode/
+
+# FiveM cache
+server/cache/
+server/cache/*
+server/txData/
+
+# Logs
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# FiveM Server
+server/*
+!server/.gitkeep
