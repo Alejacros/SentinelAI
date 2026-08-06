@@ -3,7 +3,8 @@ SuspectSystem = {
     State = "NONE",
     PreviousDirectorState = nil,
     OutcomeRecorded = false,
-    LastOrderAt = 0
+    LastOrderAt = 0,
+    OrderCount = 0
 }
 
 local function notify(message, color)
@@ -15,11 +16,20 @@ local function notify(message, color)
 end
 
 local function resetSuspectSystem()
+    if SuspectSystem.Entity
+        and BehaviorManager then
+
+        BehaviorManager.RemoveActor(
+            SuspectSystem.Entity
+        )
+    end
+
     SuspectSystem.Entity = nil
     SuspectSystem.State = "NONE"
     SuspectSystem.PreviousDirectorState = nil
     SuspectSystem.OutcomeRecorded = false
     SuspectSystem.LastOrderAt = 0
+    SuspectSystem.OrderCount = 0
 end
 
 local function recordOutcome(outcome)
@@ -30,7 +40,9 @@ local function recordOutcome(outcome)
     SuspectSystem.OutcomeRecorded = true
 
     if AddSuspectOutcomeToCurrentCase then
-        AddSuspectOutcomeToCurrentCase(outcome)
+        AddSuspectOutcomeToCurrentCase(
+            outcome
+        )
     end
 end
 
@@ -57,6 +69,7 @@ local function registerDirectorSuspect()
         SceneDirector.State
 
     SuspectSystem.OutcomeRecorded = false
+    SuspectSystem.OrderCount = 0
 
     if SceneDirector.State
         == "SUSPECT_FLEEING" then
@@ -64,6 +77,27 @@ local function registerDirectorSuspect()
         SuspectSystem.State = "FLEEING"
     else
         SuspectSystem.State = "HOSTILE"
+    end
+
+    local actor =
+        BehaviorManager.RegisterActor(
+            SuspectSystem.Entity,
+            "SUSPECT"
+        )
+
+    if actor then
+        BehaviorManager.SetState(
+            SuspectSystem.Entity,
+            SuspectSystem.State
+        )
+
+        print(
+            "[Sentinel AI] Sospechoso creado: "
+                .. BehaviorManager
+                    .GetDebugDescription(
+                        SuspectSystem.Entity
+                    )
+        )
     end
 end
 
@@ -78,6 +112,11 @@ local function surrenderSuspect()
     end
 
     SuspectSystem.State = "SURRENDERED"
+
+    BehaviorManager.SetState(
+        suspect,
+        "SURRENDERED"
+    )
 
     ClearPedTasksImmediately(suspect)
     RemoveAllPedWeapons(suspect, true)
@@ -119,6 +158,11 @@ local function resistArrest()
 
     SuspectSystem.State = "HOSTILE"
 
+    BehaviorManager.SetState(
+        suspect,
+        "RESISTING"
+    )
+
     GiveWeaponToPed(
         suspect,
         GetHashKey("WEAPON_PISTOL"),
@@ -127,9 +171,25 @@ local function resistArrest()
         true
     )
 
-    SetPedAccuracy(suspect, 12)
+    local actor =
+        BehaviorManager.GetActor(suspect)
+
+    local accuracy = 12
+
+    if actor then
+        accuracy = math.floor(
+            6 + actor.aggression * 0.18
+        )
+    end
+
+    SetPedAccuracy(
+        suspect,
+        math.min(28, accuracy)
+    )
+
     SetPedCombatAbility(suspect, 1)
     SetPedCombatMovement(suspect, 1)
+
     SetBlockingOfNonTemporaryEvents(
         suspect,
         true
@@ -164,6 +224,9 @@ local function orderSurrender()
     SuspectSystem.LastOrderAt =
         now + 2000
 
+    SuspectSystem.OrderCount =
+        SuspectSystem.OrderCount + 1
+
     local suspect =
         SuspectSystem.Entity
 
@@ -174,17 +237,45 @@ local function orderSurrender()
         return
     end
 
+    local playerPed = PlayerPedId()
+
+    local playerAiming =
+        IsPlayerFreeAimingAtEntity(
+            PlayerId(),
+            suspect
+        )
+
+    local health =
+        GetEntityHealth(suspect)
+
+    local surrendered, chance =
+        BehaviorManager.DecideSurrender(
+            suspect,
+            {
+                health = health,
+                playerAiming = playerAiming,
+                fleeing =
+                    SuspectSystem.State
+                        == "FLEEING",
+                alreadyOrdered =
+                    SuspectSystem.OrderCount > 1
+            }
+        )
+
+    print(
+        (
+            "[Sentinel AI] Orden de rendición: %d%% | resultado: %s"
+        ):format(
+            chance,
+            surrendered
+                and "RENDICIÓN"
+                or "RESISTENCIA"
+        )
+    )
+
     ClearPedTasksImmediately(suspect)
 
-    local surrenderChance = 85
-
-    if SuspectSystem.State == "FLEEING" then
-        surrenderChance = 75
-    end
-
-    if math.random(1, 100)
-        <= surrenderChance then
-
+    if surrendered then
         surrenderSuspect()
     else
         resistArrest()
@@ -220,10 +311,21 @@ end
 function MarkSuspectArrested()
     SuspectSystem.State = "ARRESTED"
 
+    local suspect =
+        GetActiveSuspect()
+
+    if suspect then
+        BehaviorManager.SetState(
+            suspect,
+            "ARRESTED"
+        )
+    end
+
     recordOutcome("ARRESTED")
 
     if SceneDirector then
         SceneDirector.State = "SAFE"
+
         SceneDirector.Objective =
             "Sospechoso detenido. Entreviste al testigo."
     end
@@ -240,7 +342,8 @@ CreateThread(function()
 
         registerDirectorSuspect()
 
-        local suspect = GetActiveSuspect()
+        local suspect =
+            GetActiveSuspect()
 
         if suspect then
             if IsEntityDead(suspect)
@@ -252,23 +355,41 @@ CreateThread(function()
                 SuspectSystem.State =
                     "NEUTRALIZED"
 
+                BehaviorManager.SetState(
+                    suspect,
+                    "NEUTRALIZED"
+                )
+
                 recordOutcome(
                     "NEUTRALIZED"
                 )
 
             elseif SceneDirector.State == "SAFE"
                 and SuspectSystem.State == "FLEEING"
-                and not SuspectSystem.OutcomeRecorded then
+                and not SuspectSystem
+                    .OutcomeRecorded then
 
-                SuspectSystem.State = "ESCAPED"
-                recordOutcome("ESCAPED")
+                SuspectSystem.State =
+                    "ESCAPED"
+
+                BehaviorManager.SetState(
+                    suspect,
+                    "ESCAPED"
+                )
+
+                recordOutcome(
+                    "ESCAPED"
+                )
             end
         end
 
         if SceneDirector
             and SceneDirector.State == "IDLE"
             and SuspectSystem.State ~= "NONE"
-            and not IsCustodyTransportActive() then
+            and (
+                not IsCustodyTransportActive
+                or not IsCustodyTransportActive()
+            ) then
 
             resetSuspectSystem()
         end
@@ -278,7 +399,9 @@ end)
 CreateThread(function()
     while true do
         local sleep = 500
-        local suspect = GetActiveSuspect()
+
+        local suspect =
+            GetActiveSuspect()
 
         if suspect
             and not IsEntityDead(suspect)
@@ -287,9 +410,12 @@ CreateThread(function()
                 or SuspectSystem.State == "FLEEING"
             ) then
 
+            local suspectCoords =
+                GetEntityCoords(suspect)
+
             local distance = #(
                 GetEntityCoords(PlayerPedId())
-                - GetEntityCoords(suspect)
+                - suspectCoords
             )
 
             if distance <= 30.0 then
@@ -297,22 +423,13 @@ CreateThread(function()
 
                 DrawMarker(
                     2,
-                    GetEntityCoords(suspect).x,
-                    GetEntityCoords(suspect).y,
-                    GetEntityCoords(suspect).z + 2.1,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    180.0,
-                    0.0,
-                    0.45,
-                    0.45,
-                    0.45,
-                    255,
-                    40,
-                    40,
-                    255,
+                    suspectCoords.x,
+                    suspectCoords.y,
+                    suspectCoords.z + 2.1,
+                    0.0, 0.0, 0.0,
+                    0.0, 180.0, 0.0,
+                    0.45, 0.45, 0.45,
+                    255, 40, 40, 255,
                     false,
                     true,
                     2,
@@ -322,7 +439,9 @@ CreateThread(function()
                     false
                 )
 
-                BeginTextCommandDisplayHelp("STRING")
+                BeginTextCommandDisplayHelp(
+                    "STRING"
+                )
 
                 AddTextComponentSubstringPlayerName(
                     "Pulsa ~INPUT_DETONATE~ para ordenar al sospechoso que se rinda."
@@ -335,7 +454,11 @@ CreateThread(function()
                     -1
                 )
 
-                if IsControlJustPressed(0, 47) then
+                if IsControlJustPressed(
+                    0,
+                    47
+                ) then
+
                     orderSurrender()
                 end
             end
