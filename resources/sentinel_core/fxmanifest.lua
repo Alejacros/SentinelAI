@@ -56,7 +56,10 @@ client_scripts {
     'client/managers/DispatchManager.lua',
     'client/managers/EvidenceManager.lua',
     'client/managers/InteractionManager.lua',
-    'client/managers/MDTManager.lua'
+    'client/managers/MDTManager.lua',
+    'client/managers/CaseReviewManager.lua',
+    'client/managers/ActionDirector.lua',
+    'client/directors/RobberyDirector.lua'
 }
 
 server_scripts {

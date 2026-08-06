@@ -4,8 +4,106 @@ SuspectSystem = {
     PreviousDirectorState = nil,
     OutcomeRecorded = false,
     LastOrderAt = 0,
-    OrderCount = 0
+    OrderCount = 0,
+
+    Profile = nil,
+    CurrentDecision = nil,
+    NextThink = 0,
+
+    Memory = {
+    Confidence = 100,
+    HasSeenPlayer = false,
+    HasBeenShot = false,
+    LastHealth = 200
+    }
 }
+local function Think()
+
+    local suspect = GetActiveSuspect()
+
+    if not suspect then
+        return
+    end
+
+    if IsEntityDead(suspect) then
+        return
+    end
+
+    if not SuspectSystem.Profile then
+        return
+    end
+
+    if SuspectSystem.State ~= "HOSTILE"
+        and SuspectSystem.State ~= "FLEEING" then
+
+        return
+    end
+
+    local profile =
+        SuspectSystem.Profile
+
+    local decision
+
+    if profile.name == "COWARD" then
+
+        decision = "RUN"
+
+    elseif profile.name == "VIOLENT" then
+
+        decision = "ATTACK"
+
+    else
+
+        decision = "COVER"
+
+    end
+
+    if decision == SuspectSystem.CurrentDecision then
+        return
+    end
+
+    SuspectSystem.CurrentDecision = decision
+
+    print(
+        ("[Suspect AI] %s -> %s")
+        :format(
+            profile.name,
+            decision
+        )
+    )
+
+    if decision == "RUN" then
+
+        TaskSmartFleePed(
+            suspect,
+            PlayerPedId(),
+            200.0,
+            -1,
+            false,
+            false
+        )
+
+    elseif decision == "ATTACK" then
+
+        TaskCombatPed(
+            suspect,
+            PlayerPedId(),
+            0,
+            16
+        )
+
+    elseif decision == "COVER" then
+
+        TaskSeekCoverFromPed(
+            suspect,
+            PlayerPedId(),
+            15000,
+            false
+        )
+
+    end
+
+end
 
 local function notify(message, color)
     Sentinel.Notify(
@@ -30,6 +128,64 @@ local function resetSuspectSystem()
     SuspectSystem.OutcomeRecorded = false
     SuspectSystem.LastOrderAt = 0
     SuspectSystem.OrderCount = 0
+end
+
+local personalities = {
+
+    {
+        name = "COWARD",
+        fear = 90,
+        aggression = 10,
+        courage = 20
+    },
+
+    {
+        name = "VIOLENT",
+        fear = 20,
+        aggression = 90,
+        courage = 80
+    },
+
+    {
+        name = "PROFESSIONAL",
+        fear = 35,
+        aggression = 55,
+        courage = 95
+    }
+
+}
+
+local function AssignProfile()
+
+    local profile =
+        personalities[
+            math.random(#personalities)
+        ]
+
+    SuspectSystem.Profile = profile
+    SuspectSystem.Memory = {
+
+    Confidence = math.random(70,100),
+
+    HasSeenPlayer = false,
+
+    HasBeenShot = false,
+
+    LastHealth = 200
+
+}
+    SuspectSystem.CurrentDecision = nil
+
+    print(
+        ("[Suspect AI] Nuevo perfil -> %s | Fear:%d | Agg:%d | Courage:%d")
+        :format(
+            profile.name,
+            profile.fear,
+            profile.aggression,
+            profile.courage
+        )
+    )
+
 end
 
 local function recordOutcome(outcome)
@@ -64,6 +220,8 @@ local function registerDirectorSuspect()
 
     SuspectSystem.Entity =
         SceneDirector.Suspect
+
+        AssignProfile()
 
     SuspectSystem.PreviousDirectorState =
         SceneDirector.State
@@ -339,7 +497,15 @@ end
 CreateThread(function()
     while true do
         Wait(250)
+if not SuspectSystem.NextThink
+    or GetGameTimer() >= SuspectSystem.NextThink then
 
+    SuspectSystem.NextThink =
+        GetGameTimer() + 2000
+
+    Think()
+
+end
         registerDirectorSuspect()
 
         local suspect =
