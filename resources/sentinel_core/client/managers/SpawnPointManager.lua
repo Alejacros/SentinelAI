@@ -1,48 +1,101 @@
+print("[Sentinel AI] Cargando SpawnPointManager...")
+
 SpawnPointManager = {}
 
-local function distanceBetween(first, second)
-    return #(first - second)
+local MAX_VERTICAL_DIFFERENCE = 3.0
+local MIN_SEPARATION = 2.5
+
+local function isValidVector(coords)
+    return coords
+        and coords.x
+        and coords.y
+        and coords.z
+        and coords.z > -100.0
 end
 
-local function isReasonableHeight(position, center)
-    return math.abs(position.z - center.z) <= 5.0
+local function isSeparated(
+    position,
+    blockedPositions,
+    minimumDistance
+)
+    for _, blocked in ipairs(blockedPositions or {}) do
+        if isValidVector(blocked)
+            and #(position - blocked) < minimumDistance then
+
+            return false
+        end
+    end
+
+    return true
 end
 
-local function isPositionInWater(position)
-    return TestVerticalProbeAgainstAllWater(
-        position.x,
-        position.y,
-        position.z + 2.0,
-        position.z - 2.0,
-        0
+local function getGroundPosition(coords)
+    if not isValidVector(coords) then
+        return nil
+    end
+
+    RequestCollisionAtCoord(
+        coords.x,
+        coords.y,
+        coords.z
     )
-end
 
-local function getGroundPosition(position)
-    for height = 50, 800, 50 do
-        local foundGround, groundZ = GetGroundZFor_3dCoord(
-            position.x,
-            position.y,
-            position.z + height,
-            false
-        )
+    for height = 5.0, 100.0, 5.0 do
+        local foundGround, groundZ =
+            GetGroundZFor_3dCoord(
+                coords.x,
+                coords.y,
+                coords.z + height,
+                false
+            )
 
         if foundGround then
-            return true, vector3(
-                position.x,
-                position.y,
-                groundZ
+            return vector3(
+                coords.x,
+                coords.y,
+                groundZ + 0.05
             )
         end
     end
 
-    return false, position
+    return nil
 end
 
-local function getRandomOffset(center, minimumRadius, maximumRadius)
-    local angle = math.rad(math.random(0, 359))
-    local radius = minimumRadius
-        + math.random() * (maximumRadius - minimumRadius)
+local function getRoadAnchor(center)
+    local found, roadCoords, heading =
+        GetClosestVehicleNodeWithHeading(
+            center.x,
+            center.y,
+            center.z,
+            1,
+            3.0,
+            0
+        )
+
+    if found and roadCoords then
+        return roadCoords, heading or 0.0
+    end
+
+    return center, 0.0
+end
+
+local function isHeightSafe(position, anchor)
+    return math.abs(position.z - anchor.z)
+        <= MAX_VERTICAL_DIFFERENCE
+end
+
+local function randomOffset(
+    center,
+    minimumRadius,
+    maximumRadius
+)
+    local angle =
+        math.rad(math.random(0, 359))
+
+    local radius =
+        minimumRadius
+        + math.random()
+        * (maximumRadius - minimumRadius)
 
     return vector3(
         center.x + math.cos(angle) * radius,
@@ -51,27 +104,11 @@ local function getRandomOffset(center, minimumRadius, maximumRadius)
     )
 end
 
-local function isSeparated(position, blockedPositions, minimumDistance)
-    for _, blockedPosition in ipairs(blockedPositions or {}) do
-        if distanceBetween(position, blockedPosition) < minimumDistance then
-            return false
-        end
-    end
-
-    return true
-end
-
-function SpawnPointManager.PreloadArea(center, timeoutMs)
-    timeoutMs = timeoutMs or 2500
-
-    SetFocusPosAndVel(
-        center.x,
-        center.y,
-        center.z,
-        0.0,
-        0.0,
-        0.0
-    )
+function SpawnPointManager.PreloadArea(
+    center,
+    timeoutMs
+)
+    timeoutMs = timeoutMs or 1500
 
     RequestCollisionAtCoord(
         center.x,
@@ -79,9 +116,10 @@ function SpawnPointManager.PreloadArea(center, timeoutMs)
         center.z
     )
 
-    local timeoutAt = GetGameTimer() + timeoutMs
+    local timeout =
+        GetGameTimer() + timeoutMs
 
-    while GetGameTimer() < timeoutAt do
+    while GetGameTimer() < timeout do
         RequestCollisionAtCoord(
             center.x,
             center.y,
@@ -90,8 +128,6 @@ function SpawnPointManager.PreloadArea(center, timeoutMs)
 
         Wait(50)
     end
-
-    ClearFocus()
 end
 
 function SpawnPointManager.FindSafePedPosition(
@@ -103,47 +139,80 @@ function SpawnPointManager.FindSafePedPosition(
     minimumRadius = minimumRadius or 3.0
     maximumRadius = maximumRadius or 12.0
 
-    for _ = 1, 24 do
-        local candidate = getRandomOffset(
-            center,
-            minimumRadius,
-            maximumRadius
-        )
+    local roadAnchor =
+        getRoadAnchor(center)
 
-        local foundSafe, safePosition = GetSafeCoordForPed(
-            candidate.x,
-            candidate.y,
-            candidate.z,
-            true,
-            16
-        )
+    -- Buscamos alrededor de la calle, no alrededor
+    -- de cualquier punto que pueda quedar en un techo.
+    for _ = 1, 30 do
+        local candidate =
+            randomOffset(
+                roadAnchor,
+                minimumRadius,
+                maximumRadius
+            )
 
-        if foundSafe and safePosition then
-            local foundGround, groundPosition =
-                getGroundPosition(safePosition)
+        local foundSafe, safeCoords =
+            GetSafeCoordForPed(
+                candidate.x,
+                candidate.y,
+                roadAnchor.z,
+                true,
+                16
+            )
 
-            if foundGround
-                and isReasonableHeight(groundPosition, center)
-                and not isPositionInWater(groundPosition)
+        if foundSafe and safeCoords then
+            local grounded =
+                getGroundPosition(safeCoords)
+
+            if grounded
+                and isHeightSafe(
+                    grounded,
+                    roadAnchor
+                )
                 and isSeparated(
-                    groundPosition,
+                    grounded,
                     blockedPositions,
-                    2.5
+                    MIN_SEPARATION
                 ) then
 
-                return groundPosition
+                return grounded
             end
         end
     end
 
-    local foundGround, fallback =
-        getGroundPosition(center)
+    -- Segunda estrategia: punto peatonal muy cerca
+    -- del nodo vial.
+    for radius = 2, 8 do
+        local candidate =
+            randomOffset(
+                roadAnchor,
+                radius,
+                radius + 1.0
+            )
 
-    if foundGround then
-        return fallback
+        local grounded =
+            getGroundPosition(candidate)
+
+        if grounded
+            and isHeightSafe(
+                grounded,
+                roadAnchor
+            )
+            and isSeparated(
+                grounded,
+                blockedPositions,
+                MIN_SEPARATION
+            ) then
+
+            return grounded
+        end
     end
 
-    return center
+    local fallback =
+        getGroundPosition(roadAnchor)
+
+    return fallback or roadAnchor
 end
 
 function SpawnPointManager.FindSafeEvidencePosition(
@@ -153,14 +222,16 @@ function SpawnPointManager.FindSafeEvidencePosition(
     return SpawnPointManager.FindSafePedPosition(
         center,
         2.0,
-        7.0,
+        6.0,
         blockedPositions
     )
 end
 
-function SpawnPointManager.FindSafeVehiclePosition(center)
-    for nodeIndex = 1, 8 do
-        local foundNode, nodePosition, heading =
+function SpawnPointManager.FindSafeVehiclePosition(
+    center
+)
+    for nodeIndex = 1, 10 do
+        local found, nodeCoords, heading =
             GetNthClosestVehicleNodeWithHeading(
                 center.x,
                 center.y,
@@ -171,27 +242,101 @@ function SpawnPointManager.FindSafeVehiclePosition(center)
                 0
             )
 
-        if foundNode
-            and nodePosition
-            and isReasonableHeight(nodePosition, center) then
-
-            return nodePosition, heading
+        if found and nodeCoords then
+            return nodeCoords, heading or 0.0
         end
     end
 
-    local foundNode, nodePosition, heading =
-        GetClosestVehicleNodeWithHeading(
-            center.x,
-            center.y,
-            center.z,
-            1,
-            3.0,
-            0
-        )
+    return getRoadAnchor(center)
+end
 
-    if foundNode then
-        return nodePosition, heading
+function SpawnPointManager.IsPedAccessible(
+    ped,
+    referenceCoords
+)
+    if not ped
+        or not DoesEntityExist(ped) then
+
+        return false
     end
 
-    return center, 0.0
+    local pedCoords =
+        GetEntityCoords(ped)
+
+    local roadAnchor =
+        getRoadAnchor(
+            referenceCoords or pedCoords
+        )
+
+    if math.abs(
+        pedCoords.z - roadAnchor.z
+    ) > MAX_VERTICAL_DIFFERENCE then
+
+        return false
+    end
+
+    return true
 end
+
+function SpawnPointManager.RescuePed(
+    ped,
+    referenceCoords
+)
+    if not ped
+        or not DoesEntityExist(ped) then
+
+        return false
+    end
+
+    local center =
+        referenceCoords
+        or GetEntityCoords(PlayerPedId())
+
+    local safePosition =
+        SpawnPointManager.FindSafePedPosition(
+            center,
+            3.0,
+            8.0,
+            {}
+        )
+
+    if not safePosition then
+        return false
+    end
+
+    RequestCollisionAtCoord(
+        safePosition.x,
+        safePosition.y,
+        safePosition.z
+    )
+
+    FreezeEntityPosition(ped, false)
+    ClearPedTasksImmediately(ped)
+
+    SetEntityCoordsNoOffset(
+        ped,
+        safePosition.x,
+        safePosition.y,
+        safePosition.z + 0.15,
+        false,
+        false,
+        false
+    )
+
+    Wait(100)
+
+    print(
+        (
+            "[Sentinel AI] NPC rescatado a posición segura: "
+            .. "%.2f %.2f %.2f"
+        ):format(
+            safePosition.x,
+            safePosition.y,
+            safePosition.z
+        )
+    )
+
+    return true
+end
+
+print("[Sentinel AI] SpawnPointManager listo.")

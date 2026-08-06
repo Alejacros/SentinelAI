@@ -229,7 +229,8 @@ function StartCustodyTransport()
         return false
     end
 
-    local suspect = GetActiveSuspect()
+    local suspect =
+        GetActiveSuspect()
 
     if not suspect
         or not DoesEntityExist(suspect)
@@ -238,10 +239,37 @@ function StartCustodyTransport()
         return false
     end
 
+    local playerCoords =
+        GetEntityCoords(PlayerPedId())
+
+    -- Si terminó arrestado en un techo, patio cerrado
+    -- o desnivel extraño, lo llevamos cerca de la agente.
+    if SpawnPointManager
+        and SpawnPointManager.IsPedAccessible
+        and not SpawnPointManager.IsPedAccessible(
+            suspect,
+            playerCoords
+        ) then
+
+        Sentinel.Notify(
+            "CUSTODIA",
+            "Reubicando al detenido en una zona accesible.",
+            {255, 180, 0}
+        )
+
+        SpawnPointManager.RescuePed(
+            suspect,
+            playerCoords
+        )
+
+        Wait(250)
+    end
+
     CustodySystem.Active = true
     CustodySystem.Suspect = suspect
 
-    PlayerData.DispatchState = "TRANSPORT"
+    PlayerData.DispatchState =
+        "TRANSPORT"
 
     makeSuspectFollow()
 
