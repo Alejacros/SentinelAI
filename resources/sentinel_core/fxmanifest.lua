@@ -20,6 +20,7 @@ client_scripts {
     'client/data/Scenarios.lua',
     'client/data/BehaviorProfiles.lua',
     'client/data/IncidentTemplates.lua',
+    'client/data/PatrolMessages.lua',
 
     'client/bootstrap.lua',
 
@@ -40,6 +41,8 @@ client_scripts {
     'client/managers/VehicleManager.lua',
     'client/managers/MenuManager.lua',
     'client/managers/HUDManager.lua',
+    'client/managers/PatrolManager.lua',
+    'client/managers/PatrolEventManager.lua',
 
     'client/managers/SceneDirectorManager.lua',
     'client/managers/IncidentVariantManager.lua',
