@@ -29,6 +29,17 @@ const sidebarStatus = document.getElementById("sidebarStatus");
 const historyCount = document.getElementById("historyCount");
 const caseHistoryList = document.getElementById("caseHistoryList");
 
+const characterCreator =
+    document.getElementById("characterCreator");
+const characterForm =
+    document.getElementById("characterForm");
+const customPronounsField =
+    document.getElementById("customPronounsField");
+const characterError =
+    document.getElementById("characterError");
+const characterSubmit =
+    document.getElementById("characterSubmit");
+
 const pageTitles = {
     dashboard: "Dashboard",
     cases: "Historial de casos",
@@ -53,6 +64,17 @@ function postNui(endpoint, payload = {}) {
 
 function closeMdt() {
     postNui("closeMdt");
+}
+
+function setCharacterError(message = "") {
+    characterError.textContent = message;
+    characterError.classList.toggle("hidden", !message);
+}
+
+function getSelectedValue(name) {
+    return characterForm.querySelector(
+        `input[name="${name}"]:checked`
+    )?.value || "";
 }
 
 function selectPage(pageName) {
@@ -226,6 +248,27 @@ window.addEventListener("message", (event) => {
     if (message.action === "close") {
         mdt.classList.add("hidden");
     }
+
+    if (message.action === "character:open") {
+        mdt.classList.add("hidden");
+        characterCreator.classList.remove("hidden");
+        characterSubmit.disabled = false;
+        characterSubmit.textContent = "Comenzar mi carrera";
+        setCharacterError();
+    }
+
+    if (message.action === "character:close") {
+        characterCreator.classList.add("hidden");
+        setCharacterError();
+    }
+
+    if (message.action === "character:error") {
+        characterSubmit.disabled = false;
+        characterSubmit.textContent = "Comenzar mi carrera";
+        setCharacterError(
+            message.message || "No fue posible guardar el personaje."
+        );
+    }
 });
 
 navigationButtons.forEach((button) => {
@@ -236,7 +279,99 @@ navigationButtons.forEach((button) => {
 
 closeButton.addEventListener("click", closeMdt);
 
+characterForm.addEventListener("change", (event) => {
+    if (event.target.name === "pronounType") {
+        const customSelected =
+            event.target.value === "custom";
+
+        customPronounsField.classList.toggle(
+            "hidden",
+            !customSelected
+        );
+    }
+
+    if (event.target.name === "bodyModel") {
+        postNui("character:previewBody", {
+            bodyModel: event.target.value
+        });
+    }
+});
+
+characterForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setCharacterError();
+
+    const payload = {
+        firstName: document
+            .getElementById("characterFirstName")
+            .value.trim(),
+        lastName: document
+            .getElementById("characterLastName")
+            .value.trim(),
+        genderIdentity:
+            getSelectedValue("genderIdentity"),
+        pronounType:
+            getSelectedValue("pronounType"),
+        customPronouns: document
+            .getElementById("customPronouns")
+            .value.trim(),
+        bodyModel:
+            getSelectedValue("bodyModel")
+    };
+
+    if (!payload.firstName || !payload.lastName) {
+        setCharacterError("Escribe tu nombre y apellido.");
+        return;
+    }
+
+    if (!payload.genderIdentity
+        || !payload.pronounType
+        || !payload.bodyModel) {
+
+        setCharacterError("Completa todas las selecciones.");
+        return;
+    }
+
+    if (payload.pronounType === "custom"
+        && !payload.customPronouns) {
+
+        setCharacterError(
+            "Escribe tus pronombres personalizados."
+        );
+        return;
+    }
+
+    characterSubmit.disabled = true;
+    characterSubmit.textContent = "Guardando...";
+
+    try {
+        const response = await postNui(
+            "character:create",
+            payload
+        );
+        const result = await response.json();
+
+        if (!result.ok) {
+            throw new Error(
+                result.error || "No fue posible crear el personaje."
+            );
+        }
+    } catch (error) {
+        characterSubmit.disabled = false;
+        characterSubmit.textContent = "Comenzar mi carrera";
+        setCharacterError(error.message);
+    }
+});
+
 window.addEventListener("keydown", (event) => {
+    if (!characterCreator.classList.contains("hidden")) {
+        if (event.key === "Escape" || event.key === "F7") {
+            event.preventDefault();
+        }
+
+        return;
+    }
+
     if (event.key === "Escape" || event.key === "F7") {
         event.preventDefault();
         closeMdt();

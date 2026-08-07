@@ -5,6 +5,9 @@ PlayerData = {
     XP = 0,
     CompletedCases = 0,
 
+    Character = nil,
+    CharacterLoaded = false,
+
     Unit = nil,
     Vehicle = nil,
 

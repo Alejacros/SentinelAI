@@ -28,7 +28,9 @@ local function buildSavePayload()
             PlayerData.CompletedCases or 0,
 
         history = GetCaseHistory()
-            or {}
+            or {},
+
+        character = PlayerData.Character
     }
 end
 
@@ -92,6 +94,11 @@ local function applyProfile(profile)
         and profile.history
         or {}
 
+    PlayerData.Character =
+        type(profile.character) == "table"
+        and profile.character
+        or nil
+
     SetCaseHistory(history)
 
     ApplyCareerProgress(
@@ -108,6 +115,12 @@ local function applyProfile(profile)
 
     SaveManager.Loading = false
     SaveManager.Loaded = true
+    PlayerData.CharacterLoaded = true
+
+    TriggerEvent(
+        "sentinel:characterProfileLoaded",
+        PlayerData.Character
+    )
 
     Sentinel.Notify(
         "SENTINEL",
@@ -131,6 +144,11 @@ RegisterNetEvent(
 RegisterNetEvent(
     "sentinel:client:profileSaved",
     function(saved)
+        TriggerEvent(
+            "sentinel:profileSaveResult",
+            saved == true
+        )
+
         if not saved then
             Sentinel.Notify(
                 "ERROR",

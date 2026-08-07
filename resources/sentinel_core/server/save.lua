@@ -188,12 +188,149 @@ local function sanitizeHistory(history)
     return cleanHistory
 end
 
-local function sanitizeProfile(payload)
+local allowedGenderIdentities = {
+    woman = true,
+    man = true,
+    non_binary = true
+}
+
+local allowedPronouns = {
+    she = true,
+    he = true,
+    elle = true,
+    custom = true
+}
+
+local allowedBodyModels = {
+    mp_f_freemode_01 = true,
+    mp_m_freemode_01 = true
+}
+
+local function sanitizeText(value, maximumLength)
+    local text = tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+
+    if text == "" then
+        return nil
+    end
+
+    return text:sub(1, maximumLength)
+end
+
+local function sanitizeCharacter(
+    character,
+    existingCharacter
+)
+    if character == nil then
+        return nil, true
+    end
+
+    if type(character) ~= "table"
+        or character.created ~= true then
+
+        return nil, false
+    end
+
+    local identity = character.identity
+    local appearance = character.appearance
+
+    if type(identity) ~= "table"
+        or type(appearance) ~= "table" then
+
+        return nil, false
+    end
+
+    local firstName =
+        sanitizeText(identity.firstName, 32)
+
+    local lastName =
+        sanitizeText(identity.lastName, 32)
+
+    local genderIdentity =
+        tostring(identity.genderIdentity or "")
+
+    local pronouns = identity.pronouns
+    local pronounType = type(pronouns) == "table"
+        and tostring(pronouns.type or "")
+        or ""
+
+    local bodyModel =
+        tostring(appearance.bodyModel or "")
+
+    if not firstName
+        or not lastName
+        or not allowedGenderIdentities[genderIdentity]
+        or not allowedPronouns[pronounType]
+        or not allowedBodyModels[bodyModel] then
+
+        return nil, false
+    end
+
+    local customPronouns = nil
+
+    if pronounType == "custom" then
+        customPronouns =
+            sanitizeText(pronouns.custom, 48)
+
+        if not customPronouns then
+            return nil, false
+        end
+    end
+
+    local now = os.time()
+    local createdAt = type(existingCharacter) == "table"
+        and tonumber(existingCharacter.createdAt)
+        or nil
+
+    return {
+        created = true,
+        version = 1,
+
+        identity = {
+            firstName = firstName,
+            lastName = lastName,
+            genderIdentity = genderIdentity,
+
+            pronouns = {
+                type = pronounType,
+                custom = customPronouns
+            }
+        },
+
+        appearance = {
+            bodyModel = bodyModel
+        },
+
+        firstSpawn = character.firstSpawn ~= false,
+        academyCompleted =
+            character.academyCompleted == true,
+
+        createdAt = createdAt or now,
+        updatedAt = now
+    }, true
+end
+
+local function sanitizeProfile(payload, existingProfile)
     payload = type(payload) == "table"
         and payload
         or {}
 
+    local character, characterValid =
+        sanitizeCharacter(
+            payload.character,
+            type(existingProfile) == "table"
+                and existingProfile.character
+                or nil
+        )
+
+    if not characterValid then
+        return nil
+    end
+
     return {
+        schemaVersion = 2,
+
         xp = math.max(
             0,
             tonumber(payload.xp) or 0
@@ -207,6 +344,8 @@ local function sanitizeProfile(payload)
         history = sanitizeHistory(
             payload.history
         ),
+
+        character = character,
 
         updatedAt = os.time()
     }
@@ -225,9 +364,11 @@ RegisterNetEvent(
 
         if type(profile) ~= "table" then
             profile = {
+                schemaVersion = 2,
                 xp = 0,
                 completedCases = 0,
                 history = {},
+                character = nil,
                 updatedAt = os.time()
             }
 
@@ -251,8 +392,24 @@ RegisterNetEvent(
         local identifier =
             getPlayerIdentifier(sourceId)
 
+        local sanitizedProfile =
+            sanitizeProfile(
+                payload,
+                profiles[identifier]
+            )
+
+        if not sanitizedProfile then
+            TriggerClientEvent(
+                "sentinel:client:profileSaved",
+                sourceId,
+                false
+            )
+
+            return
+        end
+
         profiles[identifier] =
-            sanitizeProfile(payload)
+            sanitizedProfile
 
         local saved = saveProfiles()
 

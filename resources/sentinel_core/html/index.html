@@ -258,6 +258,97 @@
         </section>
     </main>
 
+    <main id="characterCreator" class="character-creator hidden">
+        <section class="character-card">
+            <header class="character-header">
+                <span class="character-kicker">PRIMERA CONEXIÓN</span>
+                <h1>Bienvenido a Sentinel AI</h1>
+                <p>
+                    Antes de iniciar tu carrera policial,
+                    necesitamos conocerte.
+                </p>
+            </header>
+
+            <form id="characterForm" novalidate>
+                <div class="character-grid two-columns">
+                    <label class="character-field">
+                        <span>Nombre</span>
+                        <input
+                            id="characterFirstName"
+                            name="firstName"
+                            maxlength="32"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="character-field">
+                        <span>Apellido</span>
+                        <input
+                            id="characterLastName"
+                            name="lastName"
+                            maxlength="32"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+                </div>
+
+                <fieldset class="character-section">
+                    <legend>Identidad de género</legend>
+                    <p>Tu identidad no limita la base corporal que elijas.</p>
+
+                    <div class="character-options">
+                        <label><input type="radio" name="genderIdentity" value="woman" required> Mujer</label>
+                        <label><input type="radio" name="genderIdentity" value="man"> Hombre</label>
+                        <label><input type="radio" name="genderIdentity" value="non_binary"> No binario</label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="character-section">
+                    <legend>Pronombres</legend>
+
+                    <div class="character-options">
+                        <label><input type="radio" name="pronounType" value="she" required> Ella</label>
+                        <label><input type="radio" name="pronounType" value="he"> Él</label>
+                        <label><input type="radio" name="pronounType" value="elle"> Elle</label>
+                        <label><input type="radio" name="pronounType" value="custom"> Personalizado</label>
+                    </div>
+
+                    <label id="customPronounsField" class="character-field hidden">
+                        <span>Pronombres personalizados</span>
+                        <input
+                            id="customPronouns"
+                            name="customPronouns"
+                            maxlength="48"
+                            autocomplete="off"
+                        >
+                    </label>
+                </fieldset>
+
+                <fieldset class="character-section">
+                    <legend>Base corporal</legend>
+                    <p>Esta selección es independiente de tu identidad.</p>
+
+                    <div class="character-options body-options">
+                        <label><input type="radio" name="bodyModel" value="mp_f_freemode_01" required> Base corporal femenina</label>
+                        <label><input type="radio" name="bodyModel" value="mp_m_freemode_01"> Base corporal masculina</label>
+                    </div>
+                </fieldset>
+
+                <p id="characterError" class="character-error hidden"></p>
+
+                <button
+                    id="characterSubmit"
+                    class="character-submit"
+                    type="submit"
+                >
+                    Comenzar mi carrera
+                </button>
+            </form>
+        </section>
+    </main>
+
     <script src="app.js?v=0402"></script>
 </body>
 </html>
