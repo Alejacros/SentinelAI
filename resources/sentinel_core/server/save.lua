@@ -218,6 +218,309 @@ local function sanitizeText(value, maximumLength)
     return text:sub(1, maximumLength)
 end
 
+local function sanitizeNumber(value, minimum, maximum)
+    local number = tonumber(value)
+
+    if not number or number ~= number then
+        return nil
+    end
+
+    return math.max(
+        minimum,
+        math.min(maximum, number)
+    )
+end
+
+local faceFeatureNames = {
+    "noseWidth",
+    "nosePeakHigh",
+    "nosePeakSize",
+    "noseBoneHigh",
+    "nosePeakLowering",
+    "noseBoneTwist",
+    "eyeBrownHigh",
+    "eyeBrownForward",
+    "cheeksBoneHigh",
+    "cheeksBoneWidth",
+    "cheeksWidth",
+    "eyesOpening",
+    "lipsThickness",
+    "jawBoneWidth",
+    "jawBoneBackSize",
+    "chinBoneLowering",
+    "chinBoneLenght",
+    "chinBoneSize",
+    "chinHole",
+    "neckThickness"
+}
+
+local headOverlayNames = {
+    "blemishes",
+    "beard",
+    "eyebrows",
+    "ageing",
+    "makeUp",
+    "blush",
+    "complexion",
+    "sunDamage",
+    "lipstick",
+    "moleAndFreckles",
+    "chestHair",
+    "bodyBlemishes"
+}
+
+local allowedComponentIds = {
+    [0] = true,
+    [1] = true,
+    [2] = true,
+    [3] = true,
+    [4] = true,
+    [5] = true,
+    [6] = true,
+    [7] = true,
+    [8] = true,
+    [9] = true,
+    [10] = true,
+    [11] = true
+}
+
+local allowedPropIds = {
+    [0] = true,
+    [1] = true,
+    [2] = true,
+    [6] = true,
+    [7] = true
+}
+
+local function sanitizeAppearanceData(data, bodyModel)
+    if type(data) ~= "table"
+        or tostring(data.model or "") ~= bodyModel
+        or type(data.headBlend) ~= "table"
+        or type(data.faceFeatures) ~= "table"
+        or type(data.headOverlays) ~= "table"
+        or type(data.hair) ~= "table"
+        or type(data.components) ~= "table"
+        or type(data.props) ~= "table" then
+
+        return nil
+    end
+
+    local headBlend = {
+        shapeFirst = sanitizeNumber(
+            data.headBlend.shapeFirst,
+            0,
+            45
+        ),
+        shapeSecond = sanitizeNumber(
+            data.headBlend.shapeSecond,
+            0,
+            45
+        ),
+        skinFirst = sanitizeNumber(
+            data.headBlend.skinFirst,
+            0,
+            45
+        ),
+        skinSecond = sanitizeNumber(
+            data.headBlend.skinSecond,
+            0,
+            45
+        ),
+        shapeMix = sanitizeNumber(
+            data.headBlend.shapeMix,
+            0,
+            1
+        ),
+        skinMix = sanitizeNumber(
+            data.headBlend.skinMix,
+            0,
+            1
+        )
+    }
+
+    if headBlend.shapeFirst == nil
+        or headBlend.shapeSecond == nil
+        or headBlend.skinFirst == nil
+        or headBlend.skinSecond == nil
+        or headBlend.shapeMix == nil
+        or headBlend.skinMix == nil then
+
+        return nil
+    end
+
+    local faceFeatures = {}
+
+    for _, name in ipairs(faceFeatureNames) do
+        local value = sanitizeNumber(
+            data.faceFeatures[name],
+            -1,
+            1
+        )
+
+        if value == nil then
+            return nil
+        end
+
+        faceFeatures[name] = value
+    end
+
+    local headOverlays = {}
+
+    for _, name in ipairs(headOverlayNames) do
+        local overlay = data.headOverlays[name]
+
+        if type(overlay) ~= "table" then
+            return nil
+        end
+
+        local style = sanitizeNumber(
+            overlay.style,
+            0,
+            255
+        )
+        local opacity = sanitizeNumber(
+            overlay.opacity,
+            0,
+            1
+        )
+
+        if style == nil or opacity == nil then
+            return nil
+        end
+
+        headOverlays[name] = {
+            style = style,
+            opacity = opacity,
+            color = sanitizeNumber(
+                overlay.color or 0,
+                0,
+                255
+            ),
+            secondColor = sanitizeNumber(
+                overlay.secondColor or 0,
+                0,
+                255
+            )
+        }
+    end
+
+    local hair = {
+        style = sanitizeNumber(
+            data.hair.style,
+            0,
+            1000
+        ),
+        color = sanitizeNumber(
+            data.hair.color,
+            0,
+            255
+        ),
+        highlight = sanitizeNumber(
+            data.hair.highlight,
+            0,
+            255
+        )
+    }
+
+    local eyeColor = sanitizeNumber(
+        data.eyeColor,
+        0,
+        31
+    )
+
+    if hair.style == nil
+        or hair.color == nil
+        or hair.highlight == nil
+        or eyeColor == nil then
+
+        return nil
+    end
+
+    local components = {}
+
+    for index, component in ipairs(data.components) do
+        if index > 12
+            or type(component) ~= "table" then
+
+            return nil
+        end
+
+        local componentId = tonumber(
+            component.component_id
+        )
+
+        if not allowedComponentIds[componentId] then
+            return nil
+        end
+
+        components[#components + 1] = {
+            component_id = componentId,
+            drawable = sanitizeNumber(
+                component.drawable,
+                0,
+                10000
+            ),
+            texture = sanitizeNumber(
+                component.texture,
+                0,
+                1000
+            )
+        }
+
+        if components[#components].drawable == nil
+            or components[#components].texture == nil then
+
+            return nil
+        end
+    end
+
+    local props = {}
+
+    for index, prop in ipairs(data.props) do
+        if index > 5 or type(prop) ~= "table" then
+            return nil
+        end
+
+        local propId = tonumber(prop.prop_id)
+
+        if not allowedPropIds[propId] then
+            return nil
+        end
+
+        props[#props + 1] = {
+            prop_id = propId,
+            drawable = sanitizeNumber(
+                prop.drawable,
+                -1,
+                10000
+            ),
+            texture = sanitizeNumber(
+                prop.texture,
+                0,
+                1000
+            )
+        }
+
+        if props[#props].drawable == nil
+            or props[#props].texture == nil then
+
+            return nil
+        end
+    end
+
+    return {
+        model = bodyModel,
+        headBlend = headBlend,
+        faceFeatures = faceFeatures,
+        headOverlays = headOverlays,
+        hair = hair,
+        eyeColor = eyeColor,
+        components = components,
+        props = props,
+        tattoos = {}
+    }
+end
+
 local function sanitizeCharacter(
     character,
     existingCharacter
@@ -278,6 +581,29 @@ local function sanitizeCharacter(
         end
     end
 
+    local cleanAppearance = {
+        bodyModel = bodyModel
+    }
+
+    if appearance.data ~= nil then
+        if tonumber(appearance.version) ~= 1 then
+            return nil, false
+        end
+
+        local appearanceData =
+            sanitizeAppearanceData(
+                appearance.data,
+                bodyModel
+            )
+
+        if not appearanceData then
+            return nil, false
+        end
+
+        cleanAppearance.version = 1
+        cleanAppearance.data = appearanceData
+    end
+
     local now = os.time()
     local createdAt = type(existingCharacter) == "table"
         and tonumber(existingCharacter.createdAt)
@@ -298,9 +624,7 @@ local function sanitizeCharacter(
             }
         },
 
-        appearance = {
-            bodyModel = bodyModel
-        },
+        appearance = cleanAppearance,
 
         firstSpawn = character.firstSpawn ~= false,
         academyCompleted =

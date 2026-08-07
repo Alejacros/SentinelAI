@@ -35,6 +35,7 @@ client_scripts {
     'client/managers/HistoryManager.lua',
     'client/managers/CaseManager.lua',
     'client/managers/SaveManager.lua',
+    'client/managers/AppearanceManager.lua',
     'client/managers/CharacterManager.lua',
     'client/managers/SpawnManager.lua',
 

@@ -1,6 +1,7 @@
 CharacterManager = {
     CreatorOpen = false,
     SavePending = false,
+    AppearancePending = false,
     PendingCharacter = nil
 }
 
@@ -117,7 +118,7 @@ local function validateCharacterInput(data)
     end
 
     return {
-        created = true,
+        created = false,
         version = 1,
 
         identity = {
@@ -212,6 +213,15 @@ local function sendCreatorError(message)
     })
 end
 
+local function restoreCreatorAfterAppearanceError(message)
+    CharacterManager.AppearancePending = false
+    CharacterManager.PendingCharacter = nil
+    PlayerData.Character = nil
+
+    CharacterManager.OpenCreator()
+    sendCreatorError(message)
+end
+
 AddEventHandler(
     "sentinel:characterCreationRequired",
     function()
@@ -231,6 +241,8 @@ AddEventHandler(
         if not saved then
             PlayerData.Character = nil
             CharacterManager.PendingCharacter = nil
+
+            CharacterManager.OpenCreator()
 
             sendCreatorError(
                 "No fue posible guardar el personaje. Inténtalo nuevamente."
@@ -280,7 +292,8 @@ RegisterNUICallback(
 RegisterNUICallback(
     "character:create",
     function(data, callback)
-        if CharacterManager.SavePending then
+        if CharacterManager.SavePending
+            or CharacterManager.AppearancePending then
             callback({
                 ok = false,
                 error = "El personaje se está guardando."
@@ -303,30 +316,59 @@ RegisterNUICallback(
             return
         end
 
-        CharacterManager.PendingCharacter = character
-        CharacterManager.SavePending = true
-        PlayerData.Character = character
+        local bodyModel = character.appearance.bodyModel
 
-        if not SaveProgress(true) then
-            CharacterManager.SavePending = false
-            CharacterManager.PendingCharacter = nil
-            PlayerData.Character = nil
+        CharacterManager.AppearancePending = true
+        CharacterManager.CloseCreator()
 
-            sendCreatorError(
-                "El perfil aún no está listo para guardar."
-            )
+        local started = AppearanceManager.OpenCreator(
+            {
+                mode = "character",
+                bodyModel = bodyModel,
+                allowExit = false,
+                clothing = true,
+                props = true
+            },
+            function(success, appearance, errorCode)
+                CharacterManager.AppearancePending = false
 
-            callback({
-                ok = false,
-                error = "El perfil aún no está listo."
-            })
+                if not success then
+                    restoreCreatorAfterAppearanceError(
+                        errorCode == "provider_unavailable"
+                            and "El editor visual no está disponible. Inicia fivem-appearance e inténtalo nuevamente."
+                            or "No fue posible completar la apariencia del personaje."
+                    )
 
-            return
-        end
+                    return
+                end
+
+                character.created = true
+                character.appearance = {
+                    version = 1,
+                    bodyModel = bodyModel,
+                    data = appearance
+                }
+
+                CharacterManager.PendingCharacter = character
+                CharacterManager.SavePending = true
+                PlayerData.Character = character
+
+                if not SaveProgress(true) then
+                    CharacterManager.SavePending = false
+
+                    restoreCreatorAfterAppearanceError(
+                        "El perfil aún no está listo para guardar."
+                    )
+                end
+            end
+        )
 
         callback({
-            ok = true,
-            pending = true
+            ok = started == true,
+            pending = started == true,
+            error = started ~= true
+                and "No fue posible abrir el editor visual."
+                or nil
         })
     end
 )

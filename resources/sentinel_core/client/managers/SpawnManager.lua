@@ -31,62 +31,7 @@ local function printPedDiagnostics(label, ped)
     ))
 end
 
-local function applyPlayerModel(modelName)
-    if not allowedBodyModels[modelName] then
-        return false
-    end
-
-    local model = GetHashKey(modelName)
-
-    if not IsModelInCdimage(model)
-        or not IsModelValid(model) then
-
-        return false
-    end
-
-    local currentPed = PlayerPedId()
-
-    if GetEntityModel(currentPed) ~= model then
-        RequestModel(model)
-
-        local modelTimeout =
-            GetGameTimer() + 10000
-
-        while not HasModelLoaded(model)
-            and GetGameTimer() < modelTimeout do
-
-            Wait(100)
-        end
-
-        if not HasModelLoaded(model) then
-            return false
-        end
-
-        SetPlayerModel(
-            PlayerId(),
-            model
-        )
-
-        SetModelAsNoLongerNeeded(model)
-
-        Wait(0)
-    end
-
-    -- IMPORTANTE:
-    -- SetPlayerModel puede cambiar el handle.
-    local ped = PlayerPedId()
-
-    if not ped
-        or ped == 0
-        or not DoesEntityExist(ped) then
-
-        return false
-    end
-
-    return true
-end
-
-local function spawnAtStation()
+local function spawnAtStation(preserveAppearance)
     local ped = PlayerPedId()
 
     DoScreenFadeOut(500)
@@ -173,7 +118,9 @@ SetEntityHeading(
 
 -- Inicializar AHORA los componentes del freemode,
 -- sobre el PED definitivo.
-SetPedDefaultComponentVariation(ped)
+if not preserveAppearance then
+    SetPedDefaultComponentVariation(ped)
+end
 
 -- Normalizar completamente su estado visual/físico.
 ResetEntityAlpha(ped)
@@ -227,7 +174,9 @@ Wait(500)
 -- de que GTA tenga un frame para montar el freemode.
 ped = PlayerPedId()
 
-SetPedDefaultComponentVariation(ped)
+if not preserveAppearance then
+    SetPedDefaultComponentVariation(ped)
+end
 ResetEntityAlpha(ped)
 SetEntityVisible(ped, true, false)
 SetEntityCollision(ped, true, true)
@@ -252,17 +201,58 @@ function SpawnPlayerCharacter()
         return false
     end
 
-    if not applyPlayerModel(
-        character.appearance.bodyModel
-    ) then
+    local appearance = character.appearance
+    local hasAppearanceData =
+        type(appearance.data) == "table"
+    local fullAppearanceApplied = false
+
+    if hasAppearanceData
+        and AppearanceManager.IsAvailable() then
+
+        fullAppearanceApplied =
+            AppearanceManager.Apply(appearance) == true
+    end
+
+    if not fullAppearanceApplied then
+        local fallbackApplied =
+            AppearanceManager.ApplyFallback(
+                appearance.bodyModel
+            )
+
+        if not fallbackApplied then
+            return false
+        end
+    end
+
+    local ped = PlayerPedId()
+
+    if not ped
+        or ped == 0
+        or not DoesEntityExist(ped) then
+
         return false
+    end
+
+    if not hasAppearanceData
+        and AppearanceManager.IsAvailable() then
+
+        local captured = AppearanceManager.Capture()
+
+        if type(captured) == "table"
+            and captured.model == appearance.bodyModel then
+
+            appearance.version = 1
+            appearance.data = captured
+            SaveProgress(false)
+            fullAppearanceApplied = true
+        end
     end
 
     PlayerData.OnDuty = false
     PlayerData.DispatchState = "OFF_DUTY"
     PlayerData.Unit = nil
 
-    spawnAtStation()
+    spawnAtStation(fullAppearanceApplied)
 
     ShutdownLoadingScreen()
     ShutdownLoadingScreenNui()
