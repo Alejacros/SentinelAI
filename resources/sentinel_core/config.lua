@@ -1,5 +1,9 @@
 Config = {}
 
+-- IMPORTANTE:
+-- Debe ser false antes de producción/publicación.
+Config.DevMode = true
+
 Config.Units = {
     "ADAM-21",
     "ADAM-32",

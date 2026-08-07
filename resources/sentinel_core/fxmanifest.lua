@@ -26,6 +26,7 @@ client_scripts {
     'client/data/PoliceUniforms.lua',
     'client/data/PoliceFleet.lua',
     'client/data/PoliceGarages.lua',
+    'client/data/SentinelCommands.lua',
 
     'client/bootstrap.lua',
 
@@ -45,6 +46,7 @@ client_scripts {
     'client/managers/SpawnManager.lua',
 
     'client/managers/DevManager.lua',
+    'client/managers/CommandManager.lua',
     'client/managers/VehicleManager.lua',
     'client/managers/MenuManager.lua',
     'client/managers/HUDManager.lua',

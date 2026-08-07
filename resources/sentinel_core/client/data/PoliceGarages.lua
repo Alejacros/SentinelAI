@@ -18,12 +18,12 @@ PoliceGarages = {
     {
         id = "CENTRAL",
         label = "Central",
-        -- Estacion de Davis, aparcamiento exterior (mapa vanilla).
-        interaction = vector3(362.20, -1584.85, 29.29),
+        -- Estacion de Davis, patio sur exterior (mapa vanilla).
+        interaction = vector3(388.92, -1621.73, 29.29),
         spawnPoints = {
-            vector4(369.72, -1588.19, 29.29, 320.00),
-            vector4(372.42, -1585.06, 29.29, 320.00),
-            vector4(375.16, -1581.80, 29.29, 320.00)
+            vector4(391.30, -1617.65, 29.29, 179.08),
+            vector4(395.10, -1617.65, 29.29, 179.08),
+            vector4(398.90, -1617.65, 29.29, 179.08)
         },
         services = {
             tow = true,
@@ -34,12 +34,12 @@ PoliceGarages = {
     {
         id = "SANDY",
         label = "Sandy Shores",
-        -- Sandy Shores Sheriff Station, patio exterior (mapa vanilla).
-        interaction = vector3(1852.60, 3689.51, 34.27),
+        -- Sandy Shores Sheriff Station, patio real exterior (mapa vanilla).
+        interaction = vector3(1862.94, 3680.87, 33.69),
         spawnPoints = {
-            vector4(1862.42, 3675.54, 33.70, 210.00),
-            vector4(1858.72, 3677.70, 33.70, 210.00),
-            vector4(1855.02, 3679.84, 33.70, 210.00)
+            vector4(1866.75, 3677.10, 33.69, 1.37),
+            vector4(1870.55, 3677.00, 33.69, 1.37),
+            vector4(1874.35, 3676.90, 33.69, 1.37)
         },
         services = {
             tow = true,

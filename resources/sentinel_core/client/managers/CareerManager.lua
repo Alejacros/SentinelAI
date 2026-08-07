@@ -55,6 +55,38 @@ local ranks = {
     }
 }
 
+function GetCareerRanks()
+    local careerRanks = {}
+
+    for index, rank in ipairs(ranks) do
+        careerRanks[index] = {
+            name = rank.name,
+            requiredXP = rank.requiredXP
+        }
+    end
+
+    return careerRanks
+end
+
+function GetRankIndex(rankName)
+    for index, rank in ipairs(ranks) do
+        if rank.name == rankName then
+            return index
+        end
+    end
+
+    return nil
+end
+
+function IsRankAtLeast(currentRank, requiredRank)
+    local currentIndex = GetRankIndex(currentRank)
+    local requiredIndex = GetRankIndex(requiredRank)
+
+    return currentIndex ~= nil
+        and requiredIndex ~= nil
+        and currentIndex >= requiredIndex
+end
+
 local function getRankForXP(xp)
     local selectedRank = ranks[1]
 

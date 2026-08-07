@@ -1,49 +1,28 @@
 VehicleManager = {
     GarageMenuOpen = false,
     SelectedVehicle = 1,
+    AvailableFleet = {},
     ActiveGarageId = nil,
     VehicleState = "NONE",
     VehicleBlip = nil,
     GarageBlips = {},
     ActiveVehicleData = nil,
     StolenSince = nil,
-    LastKnownPosition = nil
+    LastKnownPosition = nil,
+    PreRecoveryState = nil,
+    RecoverySequence = 0,
+    UnitCleanupInProgress = false
 }
 
 local STOLEN_GRACE_PERIOD = 10000
 local ENGINE_DAMAGED_THRESHOLD = 500.0
 local ENGINE_DISABLED_THRESHOLD = 100.0
 local BODY_DAMAGED_THRESHOLD = 500.0
+local RECOVERY_DISTANCE = 150.0
+local RECOVERY_DELAY = 12000
 local UNIT_BLIP_COLOR = 3
 local STOLEN_BLIP_COLOR = 1
 local GARAGE_BLIP_COLOR = 38
-
-local rankOrder = {
-    Cadete = 1,
-    Oficial = 2,
-    ["Oficial II"] = 3,
-    Cabo = 4,
-    Sargento = 5,
-    Subteniente = 6,
-    Teniente = 7,
-    Capitan = 8,
-    Mayor = 9,
-    General = 10,
-    ["Brigadier General"] = 11,
-    ["Comandante General"] = 12
-}
-
-local function drawText(text, x, y, scale, centered)
-    SetTextFont(4)
-    SetTextScale(scale, scale)
-    SetTextColour(255, 255, 255, 255)
-    SetTextOutline()
-    SetTextCentre(centered == true)
-
-    BeginTextCommandDisplayText("STRING")
-    AddTextComponentSubstringPlayerName(text)
-    EndTextCommandDisplayText(x, y)
-end
 
 local function showHelpText(message)
     BeginTextCommandDisplayHelp("STRING")
@@ -52,10 +31,10 @@ local function showHelpText(message)
 end
 
 local function hasRequiredRank(minimumRank)
-    local playerLevel = rankOrder[PlayerData.Rank] or 0
-    local requiredLevel = rankOrder[minimumRank] or math.huge
-
-    return playerLevel >= requiredLevel
+    return IsRankAtLeast(
+        GetEffectivePlayerRank(),
+        minimumRank
+    )
 end
 
 local function getAvailableSpawnPoint(garage)
@@ -125,6 +104,38 @@ local function getPatrolFleet()
         and type(PoliceFleet.PATROL) == "table"
         and PoliceFleet.PATROL
         or {}
+end
+
+function VehicleManager.GetAvailableFleetForCurrentRank()
+    local availableFleet = {}
+
+    for _, vehicleData in ipairs(getPatrolFleet()) do
+        if hasRequiredRank(vehicleData.minRank) then
+            availableFleet[#availableFleet + 1] = vehicleData
+        end
+    end
+
+    return availableFleet
+end
+
+local function getNextFleetUnlock()
+    local playerLevel = GetRankIndex(GetEffectivePlayerRank()) or 0
+    local nextVehicle = nil
+    local nextLevel = math.huge
+
+    for _, vehicleData in ipairs(getPatrolFleet()) do
+        local requiredLevel = GetRankIndex(vehicleData.minRank)
+
+        if requiredLevel
+            and requiredLevel > playerLevel
+            and requiredLevel < nextLevel then
+
+            nextVehicle = vehicleData
+            nextLevel = requiredLevel
+        end
+    end
+
+    return nextVehicle
 end
 
 local function getFleetVehicleByModel(modelName)
@@ -217,14 +228,26 @@ local function setVehicleState(state)
     end
 end
 
-local function clearVehicleRuntime()
+function VehicleManager.ClearActiveUnit(reason, expectedVehicle)
+    if expectedVehicle
+        and PlayerData.Vehicle ~= expectedVehicle then
+
+        return false
+    end
+
+    VehicleManager.RecoverySequence =
+        VehicleManager.RecoverySequence + 1
     removeVehicleBlip()
 
     PlayerData.Vehicle = nil
     VehicleManager.ActiveVehicleData = nil
     VehicleManager.StolenSince = nil
     VehicleManager.LastKnownPosition = nil
+    VehicleManager.PreRecoveryState = nil
     VehicleManager.VehicleState = "NONE"
+    VehicleManager.UnitCleanupInProgress = false
+
+    return true
 end
 
 local function removeGarageBlips()
@@ -373,6 +396,229 @@ function VehicleManager.LocatePoliceVehicle()
     return true
 end
 
+local function getVehicleOccupantType(vehicle)
+    local maxPassengers = GetVehicleMaxNumberOfPassengers(vehicle)
+
+    for seat = -1, maxPassengers do
+        local occupant = GetPedInVehicleSeat(vehicle, seat)
+
+        if occupant and occupant ~= 0 then
+            if occupant == PlayerPedId() then
+                return "local_player"
+            elseif IsPedAPlayer(occupant) then
+                return "other_player"
+            else
+                return "npc"
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getVehicleConditionState(vehicle, fallbackState)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
+        return "DESTROYED"
+    end
+
+    local engineHealth = GetVehicleEngineHealth(vehicle)
+    local bodyHealth = GetVehicleBodyHealth(vehicle)
+
+    if IsEntityDead(vehicle)
+        or GetEntityHealth(vehicle) <= 0
+        or engineHealth <= -300.0 then
+
+        return "DESTROYED"
+    elseif engineHealth <= ENGINE_DISABLED_THRESHOLD then
+        return "DISABLED"
+    elseif engineHealth < ENGINE_DAMAGED_THRESHOLD
+        or bodyHealth < BODY_DAMAGED_THRESHOLD then
+
+        return "DAMAGED"
+    end
+
+    return fallbackState == "DAMAGED" and "DAMAGED" or "ACTIVE"
+end
+
+local function validateUnitRecovery(vehicle, pending)
+    if VehicleManager.UnitCleanupInProgress then
+        return false, "unit_operation_pending"
+    end
+
+    if PlayerData.Vehicle ~= vehicle then
+        return false, "unit_changed"
+    end
+
+    if not vehicle then
+        return false, "no_active_vehicle"
+    end
+
+    if vehicle == 0 or not DoesEntityExist(vehicle) then
+        return false, "vehicle_missing"
+    end
+
+    local operationalState = pending
+        and VehicleManager.PreRecoveryState
+        or VehicleManager.VehicleState
+
+    if operationalState ~= "ACTIVE"
+        and operationalState ~= "DAMAGED" then
+
+        return false, "invalid_state"
+    end
+
+    local actualState = getVehicleConditionState(
+        vehicle,
+        operationalState
+    )
+
+    if actualState ~= "ACTIVE" and actualState ~= "DAMAGED" then
+        return false, actualState:lower()
+    end
+
+    local occupantType = getVehicleOccupantType(vehicle)
+
+    if occupantType then
+        return false, occupantType
+    end
+
+    local distance = #(
+        GetEntityCoords(PlayerPedId()) - GetEntityCoords(vehicle)
+    )
+
+    if distance <= RECOVERY_DISTANCE then
+        return false, "vehicle_nearby"
+    end
+
+    return true
+end
+
+local function cancelUnitRecovery(sequence)
+    if VehicleManager.VehicleState ~= "RECOVERY_PENDING"
+        or sequence ~= VehicleManager.RecoverySequence then
+
+        return false
+    end
+
+    local vehicle = PlayerData.Vehicle
+    local restoredState = getVehicleConditionState(
+        vehicle,
+        VehicleManager.PreRecoveryState
+    )
+
+    VehicleManager.RecoverySequence =
+        VehicleManager.RecoverySequence + 1
+    VehicleManager.PreRecoveryState = nil
+    VehicleManager.UnitCleanupInProgress = false
+    VehicleManager.VehicleState = restoredState
+    updateVehicleBlip(restoredState)
+
+    Sentinel.Notify(
+        "CENTRAL",
+        "Recuperación de unidad cancelada.",
+        {255, 180, 0}
+    )
+
+    return true
+end
+
+function VehicleManager.RequestUnitRecovery()
+    local vehicle = PlayerData.Vehicle
+
+    if VehicleManager.VehicleState == "RECOVERY_PENDING" then
+        return false, "recovery_pending"
+    end
+
+    local valid, errorCode = validateUnitRecovery(vehicle, false)
+
+    if not valid then
+        return false, errorCode
+    end
+
+    VehicleManager.PreRecoveryState = VehicleManager.VehicleState
+    VehicleManager.RecoverySequence =
+        VehicleManager.RecoverySequence + 1
+
+    local sequence = VehicleManager.RecoverySequence
+
+    setVehicleState("RECOVERY_PENDING")
+
+    Sentinel.Notify(
+        "CENTRAL",
+        "Recuperación logística solicitada.",
+        {90, 190, 255}
+    )
+
+    CreateThread(function()
+        local finishAt = GetGameTimer() + RECOVERY_DELAY
+
+        while GetGameTimer() < finishAt do
+            Wait(500)
+
+            if sequence ~= VehicleManager.RecoverySequence
+                or VehicleManager.VehicleState
+                    ~= "RECOVERY_PENDING" then
+
+                return
+            end
+
+            local stillValid = validateUnitRecovery(vehicle, true)
+
+            if not stillValid then
+                cancelUnitRecovery(sequence)
+                return
+            end
+        end
+
+        local stillValid = validateUnitRecovery(vehicle, true)
+
+        if not stillValid then
+            cancelUnitRecovery(sequence)
+            return
+        end
+
+        VehicleManager.UnitCleanupInProgress = true
+        NetworkRequestControlOfEntity(vehicle)
+
+        local controlTimeoutAt = GetGameTimer() + 2000
+
+        while DoesEntityExist(vehicle)
+            and not NetworkHasControlOfEntity(vehicle)
+            and GetGameTimer() < controlTimeoutAt do
+
+            NetworkRequestControlOfEntity(vehicle)
+            Wait(50)
+        end
+
+        if DoesEntityExist(vehicle) then
+            SetEntityAsMissionEntity(vehicle, true, true)
+            DeleteVehicle(vehicle)
+        end
+
+        if DoesEntityExist(vehicle) then
+            VehicleManager.UnitCleanupInProgress = false
+            cancelUnitRecovery(sequence)
+            return
+        end
+
+        if not VehicleManager.ClearActiveUnit(
+            "recovered",
+            vehicle
+        ) then
+            VehicleManager.UnitCleanupInProgress = false
+            return
+        end
+
+        Sentinel.Notify(
+            "CENTRAL",
+            "Unidad recuperada. Puedes solicitar otra patrulla.",
+            {90, 190, 255}
+        )
+    end)
+
+    return true
+end
+
 function VehicleManager.CanTransportSuspects()
     return VehicleManager.HasActivePoliceVehicle()
         and VehicleManager.ActiveVehicleData ~= nil
@@ -397,9 +643,19 @@ function VehicleManager.ReturnPoliceVehicle()
 
     local vehicle = PlayerData.Vehicle
 
+    if VehicleManager.UnitCleanupInProgress then
+        return false, "unit_operation_pending"
+    end
+
+    if VehicleManager.VehicleState == "RECOVERY_PENDING" then
+        cancelUnitRecovery(VehicleManager.RecoverySequence)
+    end
+
     if vehicle == 0 or not DoesEntityExist(vehicle) then
         return false, "vehicle_unavailable"
     end
+
+    VehicleManager.UnitCleanupInProgress = true
 
     local ped = PlayerPedId()
 
@@ -430,10 +686,11 @@ function VehicleManager.ReturnPoliceVehicle()
     DeleteVehicle(vehicle)
 
     if DoesEntityExist(vehicle) then
+        VehicleManager.UnitCleanupInProgress = false
         return false, "vehicle_delete_failed"
     end
 
-    clearVehicleRuntime()
+    VehicleManager.ClearActiveUnit("returned", vehicle)
 
     return true
 end
@@ -445,6 +702,10 @@ local function abandonPoliceVehicle()
         return false, "no_active_vehicle"
     end
 
+    if VehicleManager.UnitCleanupInProgress then
+        return false, "unit_operation_pending"
+    end
+
     local entityMissing = vehicle == 0 or not DoesEntityExist(vehicle)
 
     if not entityMissing
@@ -453,6 +714,8 @@ local function abandonPoliceVehicle()
 
         return false, "vehicle_not_abandonable"
     end
+
+    VehicleManager.UnitCleanupInProgress = true
 
     if not entityMissing then
         NetworkRequestControlOfEntity(vehicle)
@@ -470,7 +733,7 @@ local function abandonPoliceVehicle()
         DeleteVehicle(vehicle)
     end
 
-    clearVehicleRuntime()
+    VehicleManager.ClearActiveUnit("abandoned", vehicle)
 
     Sentinel.Notify(
         "GARAJE",
@@ -482,9 +745,65 @@ local function abandonPoliceVehicle()
 end
 
 local function closeGarageMenu()
+    if VehicleManager.GarageMenuOpen then
+        SendNUIMessage({action = "garage:close"})
+    end
+
     VehicleManager.GarageMenuOpen = false
     VehicleManager.SelectedVehicle = 1
+    VehicleManager.AvailableFleet = {}
     VehicleManager.ActiveGarageId = nil
+end
+
+local function updateGarageUi(action)
+    local garage = VehicleManager.GetActiveGarage()
+    local nextUnlock = getNextFleetUnlock()
+    local vehicles = {}
+
+    for _, vehicleData in ipairs(VehicleManager.AvailableFleet) do
+        vehicles[#vehicles + 1] = {
+            label = vehicleData.label,
+            model = vehicleData.model,
+            role = vehicleData.role,
+            transportCapacity =
+                tonumber(vehicleData.transportCapacity) or 0
+        }
+    end
+
+    SendNUIMessage({
+        action = action or "garage:update",
+        data = {
+            station = garage and garage.label or "Sin estación",
+            currentUnit = VehicleManager.HasActivePoliceVehicle()
+                and ((VehicleManager.ActiveVehicleData
+                    and VehicleManager.ActiveVehicleData.model
+                    or "Unidad") .. " — " .. VehicleManager.VehicleState)
+                or "Ninguna",
+            vehicles = vehicles,
+            selectedIndex = VehicleManager.SelectedVehicle,
+            nextUnlock = nextUnlock
+                and (nextUnlock.label .. " — " .. nextUnlock.minRank)
+                or nil
+        }
+    })
+end
+
+function VehicleManager.RefreshGarageFleetForEffectiveRank()
+    if not VehicleManager.GarageMenuOpen then
+        return false
+    end
+
+    VehicleManager.AvailableFleet =
+        VehicleManager.GetAvailableFleetForCurrentRank()
+    VehicleManager.SelectedVehicle = 1
+
+    if #VehicleManager.AvailableFleet == 0 then
+        closeGarageMenu()
+        return false
+    end
+
+    updateGarageUi()
+    return true
 end
 
 local function openGarageMenu(garage)
@@ -495,72 +814,25 @@ local function openGarageMenu(garage)
         return false
     end
 
-    VehicleManager.ActiveGarageId = garage.id
-    VehicleManager.SelectedVehicle = 1
-    VehicleManager.GarageMenuOpen = true
+    local availableFleet =
+        VehicleManager.GetAvailableFleetForCurrentRank()
 
-    return true
-end
-
-local function drawGarageMenu()
-    local fleet = getPatrolFleet()
-    local garage = VehicleManager.GetActiveGarage()
-    local menuHeight = 0.22 + (#fleet * 0.075)
-
-    DrawRect(
-        0.5,
-        0.35,
-        0.50,
-        menuHeight,
-        0,
-        0,
-        0,
-        210
-    )
-
-    drawText("GARAJE POLICIAL", 0.5, 0.225, 0.50, true)
-    drawText(
-        ("%s | Categoría: PATROL"):format(
-            garage and garage.label or "Sin estación"
-        ),
-        0.5,
-        0.265,
-        0.30,
-        true
-    )
-
-    for index, vehicleData in ipairs(fleet) do
-        local unlocked = hasRequiredRank(vehicleData.minRank)
-        local selected = index == VehicleManager.SelectedVehicle
-        local prefix = selected and "~b~> " or "  "
-        local state = unlocked and "~g~DISPONIBLE" or "~r~BLOQUEADO"
-        local label = ("%s%s"):format(
-            prefix,
-            vehicleData.label
+    if #availableFleet == 0 then
+        Sentinel.Notify(
+            "GARAJE",
+            "No hay vehículos disponibles para tu rango.",
+            {255, 180, 0}
         )
-
-        local y = 0.285 + (index * 0.07)
-
-        drawText(label, 0.275, y, 0.32, false)
-        drawText(
-            ("Rango requerido: %s  |  %s"):format(
-                vehicleData.minRank,
-                state
-            ),
-            0.295,
-            y + 0.028,
-            0.25,
-            false
-        )
+        return false
     end
 
-    drawText(
-        "↑ ↓ seleccionar   ENTER retirar   ESC cerrar",
-        0.5,
-        0.335 + (#fleet * 0.07),
-        0.27,
-        true
-    )
+    VehicleManager.ActiveGarageId = garage.id
+    VehicleManager.SelectedVehicle = 1
+    VehicleManager.AvailableFleet = availableFleet
+    VehicleManager.GarageMenuOpen = true
+    updateGarageUi("garage:open")
+
+    return true
 end
 
 CreateThread(function()
@@ -593,6 +865,8 @@ CreateThread(function()
             end
 
             Wait(1000)
+        elseif VehicleManager.VehicleState == "RECOVERY_PENDING" then
+            Wait(500)
         elseif vehicle == 0 or not DoesEntityExist(vehicle) then
             VehicleManager.StolenSince = nil
             setVehicleState("DESTROYED")
@@ -655,31 +929,30 @@ CreateThread(function()
         local sleep = 500
 
         if PlayerData.OnDuty then
-            local ped = PlayerPedId()
             local garage, distance =
                 VehicleManager.GetNearestGarage()
 
-            if garage and distance < 25.0 then
+            if garage and distance < 18.0 then
                 sleep = 0
 
                 DrawMarker(
                     36,
                     garage.interaction.x,
                     garage.interaction.y,
-                    garage.interaction.z - 1.0,
+                    garage.interaction.z + 0.80,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
-                    1.2,
-                    1.2,
-                    1.2,
-                    40,
-                    120,
-                    255,
-                    150,
+                    0.75,
+                    0.75,
+                    0.75,
+                    54,
+                    142,
+                    190,
+                    115,
                     false,
                     false,
                     2,
@@ -699,19 +972,27 @@ CreateThread(function()
                             or VehicleManager.VehicleState == "DISABLED"
                             or activeVehicle == 0
                             or not DoesEntityExist(activeVehicle)
-                        local playerHasActiveVehicle =
+                        local unitAtGarage =
                             activeVehicle ~= 0
                             and DoesEntityExist(activeVehicle)
-                            and GetVehiclePedIsIn(ped, false)
-                                == activeVehicle
+                            and #(
+                                GetEntityCoords(activeVehicle)
+                                    - garage.interaction
+                            ) < 10.0
 
                         if canAbandon then
                             showHelpText(
                                 "Pulsa ~INPUT_CONTEXT~ para dar de baja la unidad."
                             )
-                        elseif playerHasActiveVehicle then
+                        elseif unitAtGarage then
                             showHelpText(
                                 "Pulsa ~INPUT_CONTEXT~ para devolver la patrulla."
+                            )
+                        elseif VehicleManager.VehicleState == "ACTIVE"
+                            or VehicleManager.VehicleState == "DAMAGED" then
+
+                            showHelpText(
+                                "Ya tienes una unidad asignada. Pulsa ~INPUT_CONTEXT~ para localizarla.~n~/recoverunit si quedó lejos y deseas solicitar recuperación."
                             )
                         else
                             showHelpText(
@@ -732,11 +1013,17 @@ CreateThread(function()
                                 or VehicleManager.VehicleState == "DISABLED"
                                 or activeVehicle == 0
                                 or not DoesEntityExist(activeVehicle)
+                            local unitAtGarage =
+                                activeVehicle ~= 0
+                                and DoesEntityExist(activeVehicle)
+                                and #(
+                                    GetEntityCoords(activeVehicle)
+                                        - garage.interaction
+                                ) < 10.0
 
                             if canAbandon then
                                 abandonPoliceVehicle()
-                            elseif GetVehiclePedIsIn(ped, false)
-                                == activeVehicle then
+                            elseif unitAtGarage then
 
                                 if VehicleManager.ReturnPoliceVehicle() then
                                     Sentinel.Notify(
@@ -784,6 +1071,36 @@ RegisterCommand("locateunit", function()
     end
 end, false)
 
+RegisterCommand("recoverunit", function()
+    local requested, errorCode =
+        VehicleManager.RequestUnitRecovery()
+
+    if requested then
+        return
+    end
+
+    local messages = {
+        no_active_vehicle = "No tienes una unidad policial asignada.",
+        vehicle_missing = "La unidad no existe. Usa /abandonunit para darla de baja.",
+        vehicle_nearby = "La unidad está demasiado cerca para recuperación logística.",
+        local_player = "Sal de la unidad antes de solicitar recuperación.",
+        other_player = "Otro jugador está utilizando la unidad.",
+        npc = "La unidad está ocupada. Se mantiene activa la vigilancia por posible hurto.",
+        invalid_state = "El estado actual de la unidad no permite recuperación.",
+        disabled = "La unidad está fuera de servicio. Usa /abandonunit.",
+        destroyed = "La unidad está destruida. Usa /abandonunit.",
+        recovery_pending = "Ya existe una recuperación logística pendiente.",
+        unit_operation_pending = "Ya hay una operación sobre la unidad en curso."
+    }
+
+    Sentinel.Notify(
+        "CENTRAL",
+        messages[errorCode]
+            or "No fue posible solicitar la recuperación de la unidad.",
+        {255, 180, 0}
+    )
+end, false)
+
 RegisterCommand("abandonunit", function()
     local abandoned, errorCode = abandonPoliceVehicle()
 
@@ -803,6 +1120,11 @@ AddEventHandler("onResourceStop", function(resourceName)
         return
     end
 
+    closeGarageMenu()
+    VehicleManager.RecoverySequence =
+        VehicleManager.RecoverySequence + 1
+    VehicleManager.PreRecoveryState = nil
+    VehicleManager.UnitCleanupInProgress = false
     removeVehicleBlip()
     removeGarageBlips()
 end)
@@ -814,7 +1136,7 @@ CreateThread(function()
         else
             Wait(0)
 
-            local fleet = getPatrolFleet()
+            local fleet = VehicleManager.AvailableFleet
             local activeGarage = VehicleManager.GetActiveGarage()
             local distanceToGarage = activeGarage
                 and #(
@@ -830,8 +1152,6 @@ CreateThread(function()
 
                 closeGarageMenu()
             else
-                drawGarageMenu()
-
                 if IsControlJustPressed(0, 172) then
                     VehicleManager.SelectedVehicle =
                         VehicleManager.SelectedVehicle - 1
@@ -839,6 +1159,8 @@ CreateThread(function()
                     if VehicleManager.SelectedVehicle < 1 then
                         VehicleManager.SelectedVehicle = #fleet
                     end
+
+                    updateGarageUi()
                 elseif IsControlJustPressed(0, 173) then
                     VehicleManager.SelectedVehicle =
                         VehicleManager.SelectedVehicle + 1
@@ -846,6 +1168,8 @@ CreateThread(function()
                     if VehicleManager.SelectedVehicle > #fleet then
                         VehicleManager.SelectedVehicle = 1
                     end
+
+                    updateGarageUi()
                 elseif IsControlJustPressed(0, 191) then
                     local selected = fleet[
                         VehicleManager.SelectedVehicle

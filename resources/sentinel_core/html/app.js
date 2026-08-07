@@ -41,6 +41,16 @@ const characterSubmit =
     document.getElementById("characterSubmit");
 const sentinelVersion =
     document.getElementById("sentinelVersion");
+const policeGarage =
+    document.getElementById("policeGarage");
+const garageStation =
+    document.getElementById("garageStation");
+const garageCurrentUnit =
+    document.getElementById("garageCurrentUnit");
+const garageVehicleList =
+    document.getElementById("garageVehicleList");
+const garageNextUnlock =
+    document.getElementById("garageNextUnlock");
 
 const pageTitles = {
     dashboard: "Dashboard",
@@ -234,6 +244,68 @@ function updateMdt(data = {}) {
     renderCaseHistory(data.caseHistory);
 }
 
+function updatePoliceGarage(data = {}) {
+    const vehicles = Array.isArray(data.vehicles)
+        ? data.vehicles
+        : [];
+    const selectedIndex = Math.max(
+        0,
+        Math.min(
+            vehicles.length - 1,
+            (Number(data.selectedIndex) || 1) - 1
+        )
+    );
+    const maxVisible = 6;
+    const firstVisible = Math.max(
+        0,
+        Math.min(
+            selectedIndex - 2,
+            vehicles.length - maxVisible
+        )
+    );
+    const visibleVehicles = vehicles.slice(
+        firstVisible,
+        firstVisible + maxVisible
+    );
+
+    garageStation.textContent = data.station || "Sin estación";
+    garageCurrentUnit.textContent = data.currentUnit || "Ninguna";
+
+    garageVehicleList.innerHTML = visibleVehicles
+        .map((vehicle, visibleIndex) => {
+            const absoluteIndex = firstVisible + visibleIndex;
+            const selected = absoluteIndex === selectedIndex;
+            const capacity = Number(vehicle.transportCapacity) || 0;
+
+            return `
+                <article class="garage-vehicle${selected ? " selected" : ""}">
+                    <div class="garage-selection-marker"></div>
+
+                    <div class="garage-vehicle-main">
+                        <strong>${escapeHtml(vehicle.label)}</strong>
+                        <span>Modelo: ${escapeHtml(vehicle.model)}</span>
+                    </div>
+
+                    <div class="garage-vehicle-meta">
+                        <span>TIPO</span>
+                        <strong>${escapeHtml(vehicle.role)}</strong>
+                    </div>
+
+                    <div class="garage-vehicle-meta">
+                        <span>CAPACIDAD DE CUSTODIA</span>
+                        <strong>${capacity}</strong>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+
+    garageNextUnlock.textContent = data.nextUnlock
+        ? `Próximo desbloqueo: ${data.nextUnlock}`
+        : "";
+    garageNextUnlock.classList.toggle("hidden", !data.nextUnlock);
+}
+
 window.addEventListener("message", (event) => {
     const message = event.data || {};
 
@@ -254,6 +326,19 @@ window.addEventListener("message", (event) => {
 
     if (message.action === "close") {
         mdt.classList.add("hidden");
+    }
+
+    if (message.action === "garage:open") {
+        updatePoliceGarage(message.data);
+        policeGarage.classList.remove("hidden");
+    }
+
+    if (message.action === "garage:update") {
+        updatePoliceGarage(message.data);
+    }
+
+    if (message.action === "garage:close") {
+        policeGarage.classList.add("hidden");
     }
 
     if (message.action === "character:open") {
@@ -371,6 +456,14 @@ characterForm.addEventListener("submit", async (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+    if (!policeGarage.classList.contains("hidden")) {
+        if (event.key === "Escape") {
+            event.preventDefault();
+        }
+
+        return;
+    }
+
     if (!characterCreator.classList.contains("hidden")) {
         if (event.key === "Escape" || event.key === "F7") {
             event.preventDefault();
