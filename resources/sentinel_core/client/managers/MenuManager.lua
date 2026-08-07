@@ -70,7 +70,6 @@ local function startDuty()
     PlayerData.DispatchState = "WAITING"
 
     AssignRandomUnit()
-    SpawnPoliceVehicle()
     ClearPlayerWantedLevel(PlayerId())
     SetPlayerWantedLevel(PlayerId(), 0, false)
     SetPlayerWantedLevelNow(PlayerId(), false)
@@ -85,6 +84,16 @@ local function startDuty()
 end
 
 local function stopDuty()
+    if VehicleManager.HasActivePoliceVehicle() then
+        Sentinel.Notify(
+            "CENTRAL",
+            "Devuelve la unidad antes de finalizar el turno.",
+            {255, 180, 0}
+        )
+
+        return false
+    end
+
     local civilianOutfit = PlayerData.CivilianOutfit
 
     if type(civilianOutfit) ~= "table" then

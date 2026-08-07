@@ -22,6 +22,7 @@ client_scripts {
     'client/data/IncidentTemplates.lua',
     'client/data/PatrolMessages.lua',
     'client/data/PoliceUniforms.lua',
+    'client/data/PoliceFleet.lua',
 
     'client/bootstrap.lua',
 
