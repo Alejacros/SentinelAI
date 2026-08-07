@@ -1,16 +1,22 @@
 VehicleManager = {
     GarageMenuOpen = false,
-    SelectedVehicle = 1
+    SelectedVehicle = 1,
+    ActiveGarageId = nil,
+    VehicleState = "NONE",
+    VehicleBlip = nil,
+    GarageBlips = {},
+    ActiveVehicleData = nil,
+    StolenSince = nil,
+    LastKnownPosition = nil
 }
 
-local GARAGE_POSITION =
-    vector3(454.60, -1017.40, 28.40)
-
-local VEHICLE_SPAWN_POINTS = {
-    vector4(438.42, -1018.30, 27.76, 90.43),
-    vector4(438.45, -1022.10, 27.83, 90.00),
-    vector4(438.48, -1026.00, 27.90, 90.00)
-}
+local STOLEN_GRACE_PERIOD = 10000
+local ENGINE_DAMAGED_THRESHOLD = 500.0
+local ENGINE_DISABLED_THRESHOLD = 100.0
+local BODY_DAMAGED_THRESHOLD = 500.0
+local UNIT_BLIP_COLOR = 3
+local STOLEN_BLIP_COLOR = 1
+local GARAGE_BLIP_COLOR = 38
 
 local rankOrder = {
     Cadete = 1,
@@ -52,8 +58,12 @@ local function hasRequiredRank(minimumRank)
     return playerLevel >= requiredLevel
 end
 
-local function getAvailableSpawnPoint()
-    for _, spawnPoint in ipairs(VEHICLE_SPAWN_POINTS) do
+local function getAvailableSpawnPoint(garage)
+    if not garage or type(garage.spawnPoints) ~= "table" then
+        return nil
+    end
+
+    for _, spawnPoint in ipairs(garage.spawnPoints) do
         if not IsAnyVehicleNearPoint(
             spawnPoint.x,
             spawnPoint.y,
@@ -67,6 +77,49 @@ local function getAvailableSpawnPoint()
     return nil
 end
 
+function VehicleManager.GetGarageById(id)
+    if type(PoliceGarages) ~= "table" then
+        return nil
+    end
+
+    for _, garage in ipairs(PoliceGarages) do
+        if garage.id == id then
+            return garage
+        end
+    end
+
+    return nil
+end
+
+
+function VehicleManager.GetNearestGarage()
+    if type(PoliceGarages) ~= "table" then
+        return nil, math.huge
+    end
+
+    local playerPosition = GetEntityCoords(PlayerPedId())
+    local nearestGarage = nil
+    local nearestDistance = math.huge
+
+    for _, garage in ipairs(PoliceGarages) do
+        local distance = #(playerPosition - garage.interaction)
+
+        if distance < nearestDistance then
+            nearestGarage = garage
+            nearestDistance = distance
+        end
+    end
+
+    return nearestGarage, nearestDistance
+end
+
+
+function VehicleManager.GetActiveGarage()
+    return VehicleManager.GetGarageById(
+        VehicleManager.ActiveGarageId
+    )
+end
+
 local function getPatrolFleet()
     return type(PoliceFleet) == "table"
         and type(PoliceFleet.PATROL) == "table"
@@ -74,18 +127,147 @@ local function getPatrolFleet()
         or {}
 end
 
-function VehicleManager.HasActivePoliceVehicle()
-    local vehicle = PlayerData.Vehicle
-
-    if vehicle
-        and vehicle ~= 0
-        and DoesEntityExist(vehicle) then
-
-        return true
+local function getFleetVehicleByModel(modelName)
+    for _, vehicleData in ipairs(getPatrolFleet()) do
+        if vehicleData.model == modelName then
+            return vehicleData
+        end
     end
 
+    return nil
+end
+
+local function removeVehicleBlip()
+    if VehicleManager.VehicleBlip
+        and DoesBlipExist(VehicleManager.VehicleBlip) then
+
+        RemoveBlip(VehicleManager.VehicleBlip)
+    end
+
+    VehicleManager.VehicleBlip = nil
+end
+
+local function createVehicleBlip(vehicle)
+    removeVehicleBlip()
+
+    local blip = AddBlipForEntity(vehicle)
+
+    SetBlipSprite(blip, 56)
+    SetBlipColour(blip, UNIT_BLIP_COLOR)
+    SetBlipScale(blip, 0.85)
+    SetBlipAsShortRange(blip, false)
+
+    BeginTextCommandSetBlipName("STRING")
+    AddTextComponentSubstringPlayerName("Unidad policial asignada")
+    EndTextCommandSetBlipName(blip)
+
+    VehicleManager.VehicleBlip = blip
+end
+
+local function updateVehicleBlip(state)
+    local blip = VehicleManager.VehicleBlip
+
+    if state == "DESTROYED" then
+        removeVehicleBlip()
+        return
+    end
+
+    if blip and DoesBlipExist(blip) then
+        SetBlipColour(
+            blip,
+            state == "STOLEN"
+                and STOLEN_BLIP_COLOR
+                or UNIT_BLIP_COLOR
+        )
+    end
+end
+
+local function setVehicleState(state)
+    if VehicleManager.VehicleState == state then
+        return
+    end
+
+    VehicleManager.VehicleState = state
+    updateVehicleBlip(state)
+
+    if state == "DAMAGED" then
+        Sentinel.Notify(
+            "CENTRAL",
+            "Tu unidad presenta daños importantes.",
+            {255, 180, 0}
+        )
+    elseif state == "DISABLED" then
+        Sentinel.Notify(
+            "CENTRAL",
+            "Unidad fuera de servicio. Solicita asistencia.",
+            {255, 80, 80}
+        )
+    elseif state == "STOLEN" then
+        Sentinel.Notify(
+            "CENTRAL",
+            "Posible hurto de unidad policial. Vehículo marcado en GPS.",
+            {255, 80, 80}
+        )
+    elseif state == "DESTROYED" then
+        Sentinel.Notify(
+            "CENTRAL",
+            "Unidad policial destruida.",
+            {255, 80, 80}
+        )
+    end
+end
+
+local function clearVehicleRuntime()
+    removeVehicleBlip()
+
     PlayerData.Vehicle = nil
-    return false
+    VehicleManager.ActiveVehicleData = nil
+    VehicleManager.StolenSince = nil
+    VehicleManager.LastKnownPosition = nil
+    VehicleManager.VehicleState = "NONE"
+end
+
+local function removeGarageBlips()
+    for _, blip in pairs(VehicleManager.GarageBlips) do
+        if DoesBlipExist(blip) then
+            RemoveBlip(blip)
+        end
+    end
+
+    VehicleManager.GarageBlips = {}
+end
+
+local function createGarageBlips()
+    removeGarageBlips()
+
+    if type(PoliceGarages) ~= "table" then
+        return
+    end
+
+    for _, garage in ipairs(PoliceGarages) do
+        local blip = AddBlipForCoord(
+            garage.interaction.x,
+            garage.interaction.y,
+            garage.interaction.z
+        )
+
+        SetBlipSprite(blip, 357)
+        SetBlipColour(blip, GARAGE_BLIP_COLOR)
+        SetBlipScale(blip, 0.75)
+        SetBlipAsShortRange(blip, true)
+
+        BeginTextCommandSetBlipName("STRING")
+        AddTextComponentSubstringPlayerName(
+            "Garaje policial - " .. garage.label
+        )
+        EndTextCommandSetBlipName(blip)
+
+        VehicleManager.GarageBlips[garage.id] = blip
+    end
+end
+
+function VehicleManager.HasActivePoliceVehicle()
+    return PlayerData.Vehicle ~= nil
 end
 
 function VehicleManager.SpawnPoliceVehicle(
@@ -100,7 +282,9 @@ function VehicleManager.SpawnPoliceVehicle(
     local spawnPoint = coords
 
     if not spawnPoint then
-        spawnPoint = getAvailableSpawnPoint()
+        spawnPoint = getAvailableSpawnPoint(
+            VehicleManager.GetActiveGarage()
+        )
     end
 
     if not spawnPoint then
@@ -155,8 +339,55 @@ function VehicleManager.SpawnPoliceVehicle(
     SetVehRadioStation(vehicle, "OFF")
 
     PlayerData.Vehicle = vehicle
+    VehicleManager.ActiveVehicleData =
+        getFleetVehicleByModel(tostring(modelName))
+    VehicleManager.StolenSince = nil
+    VehicleManager.LastKnownPosition = GetEntityCoords(vehicle)
+    createVehicleBlip(vehicle)
+    setVehicleState("ACTIVE")
 
     return true, vehicle
+end
+
+function VehicleManager.LocatePoliceVehicle()
+    local vehicle = PlayerData.Vehicle
+
+    if not vehicle
+        or vehicle == 0
+        or not DoesEntityExist(vehicle) then
+
+        return false
+    end
+
+    local position = GetEntityCoords(vehicle)
+
+    VehicleManager.LastKnownPosition = position
+    SetNewWaypoint(position.x, position.y)
+
+    Sentinel.Notify(
+        "CENTRAL",
+        "GPS actualizado con la ubicación de tu unidad.",
+        {90, 190, 255}
+    )
+
+    return true
+end
+
+function VehicleManager.CanTransportSuspects()
+    return VehicleManager.HasActivePoliceVehicle()
+        and VehicleManager.ActiveVehicleData ~= nil
+        and VehicleManager.ActiveVehicleData.canTransportSuspects == true
+end
+
+function VehicleManager.GetTransportCapacity()
+    if not VehicleManager.CanTransportSuspects() then
+        return 0
+    end
+
+    return math.max(
+        0,
+        tonumber(VehicleManager.ActiveVehicleData.transportCapacity) or 0
+    )
 end
 
 function VehicleManager.ReturnPoliceVehicle()
@@ -165,6 +396,11 @@ function VehicleManager.ReturnPoliceVehicle()
     end
 
     local vehicle = PlayerData.Vehicle
+
+    if vehicle == 0 or not DoesEntityExist(vehicle) then
+        return false, "vehicle_unavailable"
+    end
+
     local ped = PlayerPedId()
 
     if GetVehiclePedIsIn(ped, false) == vehicle then
@@ -197,7 +433,50 @@ function VehicleManager.ReturnPoliceVehicle()
         return false, "vehicle_delete_failed"
     end
 
-    PlayerData.Vehicle = nil
+    clearVehicleRuntime()
+
+    return true
+end
+
+local function abandonPoliceVehicle()
+    local vehicle = PlayerData.Vehicle
+
+    if not vehicle then
+        return false, "no_active_vehicle"
+    end
+
+    local entityMissing = vehicle == 0 or not DoesEntityExist(vehicle)
+
+    if not entityMissing
+        and VehicleManager.VehicleState ~= "DESTROYED"
+        and VehicleManager.VehicleState ~= "DISABLED" then
+
+        return false, "vehicle_not_abandonable"
+    end
+
+    if not entityMissing then
+        NetworkRequestControlOfEntity(vehicle)
+
+        local timeoutAt = GetGameTimer() + 2000
+
+        while not NetworkHasControlOfEntity(vehicle)
+            and GetGameTimer() < timeoutAt do
+
+            NetworkRequestControlOfEntity(vehicle)
+            Wait(50)
+        end
+
+        SetEntityAsMissionEntity(vehicle, true, true)
+        DeleteVehicle(vehicle)
+    end
+
+    clearVehicleRuntime()
+
+    Sentinel.Notify(
+        "GARAJE",
+        "Unidad dada de baja. Puedes solicitar reemplazo en el garaje.",
+        {90, 190, 255}
+    )
 
     return true
 end
@@ -205,15 +484,18 @@ end
 local function closeGarageMenu()
     VehicleManager.GarageMenuOpen = false
     VehicleManager.SelectedVehicle = 1
+    VehicleManager.ActiveGarageId = nil
 end
 
-local function openGarageMenu()
+local function openGarageMenu(garage)
     if not PlayerData.OnDuty
+        or not garage
         or VehicleManager.HasActivePoliceVehicle() then
 
         return false
     end
 
+    VehicleManager.ActiveGarageId = garage.id
     VehicleManager.SelectedVehicle = 1
     VehicleManager.GarageMenuOpen = true
 
@@ -222,12 +504,13 @@ end
 
 local function drawGarageMenu()
     local fleet = getPatrolFleet()
-    local menuHeight = 0.18 + (#fleet * 0.055)
+    local garage = VehicleManager.GetActiveGarage()
+    local menuHeight = 0.22 + (#fleet * 0.075)
 
     DrawRect(
         0.5,
         0.35,
-        0.44,
+        0.50,
         menuHeight,
         0,
         0,
@@ -235,40 +518,137 @@ local function drawGarageMenu()
         210
     )
 
-    drawText("GARAJE POLICIAL", 0.5, 0.245, 0.50, true)
-    drawText("Categoría: PATROL", 0.5, 0.285, 0.30, true)
+    drawText("GARAJE POLICIAL", 0.5, 0.225, 0.50, true)
+    drawText(
+        ("%s | Categoría: PATROL"):format(
+            garage and garage.label or "Sin estación"
+        ),
+        0.5,
+        0.265,
+        0.30,
+        true
+    )
 
     for index, vehicleData in ipairs(fleet) do
         local unlocked = hasRequiredRank(vehicleData.minRank)
         local selected = index == VehicleManager.SelectedVehicle
         local prefix = selected and "~b~> " or "  "
         local state = unlocked and "~g~DISPONIBLE" or "~r~BLOQUEADO"
-        local label = (
-            "%s%s | %s | Requiere: %s"
-        ):format(
+        local label = ("%s%s"):format(
             prefix,
-            vehicleData.label,
-            state,
-            vehicleData.minRank
+            vehicleData.label
         )
 
+        local y = 0.285 + (index * 0.07)
+
+        drawText(label, 0.275, y, 0.32, false)
         drawText(
-            label,
-            0.31,
-            0.315 + (index * 0.05),
-            0.30,
+            ("Rango requerido: %s  |  %s"):format(
+                vehicleData.minRank,
+                state
+            ),
+            0.295,
+            y + 0.028,
+            0.25,
             false
         )
     end
 
     drawText(
-        "[ARRIBA/ABAJO] Seleccionar  [ENTER] Retirar  [ESC] Cerrar",
+        "↑ ↓ seleccionar   ENTER retirar   ESC cerrar",
         0.5,
-        0.345 + (#fleet * 0.05),
+        0.335 + (#fleet * 0.07),
         0.27,
         true
     )
 end
+
+CreateThread(function()
+    local previousDutyState = false
+
+    while true do
+        local onDuty = PlayerData.OnDuty == true
+
+        if previousDutyState ~= onDuty then
+            previousDutyState = onDuty
+
+            if onDuty then
+                createGarageBlips()
+            else
+                removeGarageBlips()
+            end
+        end
+
+        Wait(500)
+    end
+end)
+
+CreateThread(function()
+    while true do
+        local vehicle = PlayerData.Vehicle
+
+        if not vehicle then
+            if VehicleManager.VehicleState ~= "NONE" then
+                setVehicleState("NONE")
+            end
+
+            Wait(1000)
+        elseif vehicle == 0 or not DoesEntityExist(vehicle) then
+            VehicleManager.StolenSince = nil
+            setVehicleState("DESTROYED")
+            Wait(1000)
+        else
+            local playerPed = PlayerPedId()
+            local engineHealth = GetVehicleEngineHealth(vehicle)
+            local bodyHealth = GetVehicleBodyHealth(vehicle)
+            local driver = GetPedInVehicleSeat(vehicle, -1)
+            local playerInside = IsPedInVehicle(
+                playerPed,
+                vehicle,
+                false
+            )
+
+            VehicleManager.LastKnownPosition = GetEntityCoords(vehicle)
+
+            local stolen = false
+
+            if driver ~= 0
+                and driver ~= playerPed
+                and not playerInside then
+
+                if not VehicleManager.StolenSince then
+                    VehicleManager.StolenSince = GetGameTimer()
+                elseif GetGameTimer()
+                    - VehicleManager.StolenSince
+                    >= STOLEN_GRACE_PERIOD then
+
+                    stolen = true
+                end
+            else
+                VehicleManager.StolenSince = nil
+            end
+
+            if IsEntityDead(vehicle)
+                or GetEntityHealth(vehicle) <= 0
+                or engineHealth <= -300.0 then
+
+                setVehicleState("DESTROYED")
+            elseif engineHealth <= ENGINE_DISABLED_THRESHOLD then
+                setVehicleState("DISABLED")
+            elseif stolen then
+                setVehicleState("STOLEN")
+            elseif engineHealth < ENGINE_DAMAGED_THRESHOLD
+                or bodyHealth < BODY_DAMAGED_THRESHOLD then
+
+                setVehicleState("DAMAGED")
+            else
+                setVehicleState("ACTIVE")
+            end
+
+            Wait(1000)
+        end
+    end
+end)
 
 CreateThread(function()
     while true do
@@ -276,26 +656,26 @@ CreateThread(function()
 
         if PlayerData.OnDuty then
             local ped = PlayerPedId()
-            local playerPosition = GetEntityCoords(ped)
-            local distance = #(playerPosition - GARAGE_POSITION)
+            local garage, distance =
+                VehicleManager.GetNearestGarage()
 
-            if distance < 25.0 then
+            if garage and distance < 25.0 then
                 sleep = 0
 
                 DrawMarker(
-                    1,
-                    GARAGE_POSITION.x,
-                    GARAGE_POSITION.y,
-                    GARAGE_POSITION.z - 1.0,
+                    36,
+                    garage.interaction.x,
+                    garage.interaction.y,
+                    garage.interaction.z - 1.0,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
                     0.0,
-                    1.8,
-                    1.8,
-                    0.4,
+                    1.2,
+                    1.2,
+                    1.2,
                     40,
                     120,
                     255,
@@ -313,9 +693,31 @@ CreateThread(function()
                     and not VehicleManager.GarageMenuOpen then
 
                     if VehicleManager.HasActivePoliceVehicle() then
-                        showHelpText(
-                            "Pulsa ~INPUT_CONTEXT~ para devolver la patrulla."
-                        )
+                        local activeVehicle = PlayerData.Vehicle
+                        local canAbandon =
+                            VehicleManager.VehicleState == "DESTROYED"
+                            or VehicleManager.VehicleState == "DISABLED"
+                            or activeVehicle == 0
+                            or not DoesEntityExist(activeVehicle)
+                        local playerHasActiveVehicle =
+                            activeVehicle ~= 0
+                            and DoesEntityExist(activeVehicle)
+                            and GetVehiclePedIsIn(ped, false)
+                                == activeVehicle
+
+                        if canAbandon then
+                            showHelpText(
+                                "Pulsa ~INPUT_CONTEXT~ para dar de baja la unidad."
+                            )
+                        elseif playerHasActiveVehicle then
+                            showHelpText(
+                                "Pulsa ~INPUT_CONTEXT~ para devolver la patrulla."
+                            )
+                        else
+                            showHelpText(
+                                "Ya tienes una unidad asignada. Pulsa ~INPUT_CONTEXT~ para localizarla."
+                            )
+                        end
                     else
                         showHelpText(
                             "Pulsa ~INPUT_CONTEXT~ para acceder al garaje policial."
@@ -325,32 +727,41 @@ CreateThread(function()
                     if IsControlJustPressed(0, 38) then
                         if VehicleManager.HasActivePoliceVehicle() then
                             local activeVehicle = PlayerData.Vehicle
-                            local playerVehicle = GetVehiclePedIsIn(
-                                ped,
-                                false
-                            )
+                            local canAbandon =
+                                VehicleManager.VehicleState == "DESTROYED"
+                                or VehicleManager.VehicleState == "DISABLED"
+                                or activeVehicle == 0
+                                or not DoesEntityExist(activeVehicle)
 
-                            if playerVehicle ~= activeVehicle then
-                                Sentinel.Notify(
-                                    "GARAJE",
-                                    "Acerca tu patrulla al garaje para devolverla.",
-                                    {255, 180, 0}
-                                )
-                            elseif VehicleManager.ReturnPoliceVehicle() then
-                                Sentinel.Notify(
-                                    "GARAJE",
-                                    "Patrulla devuelta correctamente.",
-                                    {90, 190, 255}
-                                )
+                            if canAbandon then
+                                abandonPoliceVehicle()
+                            elseif GetVehiclePedIsIn(ped, false)
+                                == activeVehicle then
+
+                                if VehicleManager.ReturnPoliceVehicle() then
+                                    Sentinel.Notify(
+                                        "GARAJE",
+                                        "Patrulla devuelta correctamente.",
+                                        {90, 190, 255}
+                                    )
+                                else
+                                    Sentinel.Notify(
+                                        "ERROR",
+                                        "No fue posible devolver la patrulla.",
+                                        {255, 80, 80}
+                                    )
+                                end
                             else
                                 Sentinel.Notify(
-                                    "ERROR",
-                                    "No fue posible devolver la patrulla.",
-                                    {255, 80, 80}
+                                    "GARAJE",
+                                    "Ya tienes una unidad asignada.",
+                                    {255, 180, 0}
                                 )
+
+                                VehicleManager.LocatePoliceVehicle()
                             end
                         else
-                            openGarageMenu()
+                            openGarageMenu(garage)
                         end
                     end
                 end
@@ -363,6 +774,39 @@ CreateThread(function()
     end
 end)
 
+RegisterCommand("locateunit", function()
+    if not VehicleManager.LocatePoliceVehicle() then
+        Sentinel.Notify(
+            "CENTRAL",
+            "No tienes una unidad policial localizable.",
+            {255, 180, 0}
+        )
+    end
+end, false)
+
+RegisterCommand("abandonunit", function()
+    local abandoned, errorCode = abandonPoliceVehicle()
+
+    if not abandoned then
+        Sentinel.Notify(
+            "GARAJE",
+            errorCode == "vehicle_not_abandonable"
+                and "Solo puedes dar de baja una unidad destruida o fuera de servicio."
+                or "No tienes una unidad policial para dar de baja.",
+            {255, 180, 0}
+        )
+    end
+end, false)
+
+AddEventHandler("onResourceStop", function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+
+    removeVehicleBlip()
+    removeGarageBlips()
+end)
+
 CreateThread(function()
     while true do
         if not VehicleManager.GarageMenuOpen then
@@ -371,10 +815,13 @@ CreateThread(function()
             Wait(0)
 
             local fleet = getPatrolFleet()
-            local distanceToGarage = #(
-                GetEntityCoords(PlayerPedId())
-                    - GARAGE_POSITION
-            )
+            local activeGarage = VehicleManager.GetActiveGarage()
+            local distanceToGarage = activeGarage
+                and #(
+                    GetEntityCoords(PlayerPedId())
+                        - activeGarage.interaction
+                )
+                or math.huge
 
             if not PlayerData.OnDuty
                 or VehicleManager.HasActivePoliceVehicle()
