@@ -7,6 +7,8 @@ PlayerData = {
 
     Character = nil,
     CharacterLoaded = false,
+    CivilianOutfit = nil,
+    DutyOutfit = nil,
 
     Unit = nil,
     Vehicle = nil,

@@ -13,6 +13,59 @@ local function drawText(text, x, y, scale)
 end
 
 local function startDuty()
+    local character = PlayerData.Character
+    local appearance = type(character) == "table"
+        and character.appearance
+        or nil
+    local bodyModel = type(appearance) == "table"
+        and appearance.bodyModel
+        or nil
+    local modelUniforms = bodyModel
+        and PoliceUniforms[bodyModel]
+        or nil
+    local dutyOutfit = modelUniforms
+        and modelUniforms.PATROL
+        or nil
+
+    if not dutyOutfit then
+        Sentinel.Notify(
+            "ERROR",
+            "No existe un uniforme PATROL para esta base corporal.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    local civilianOutfit =
+        AppearanceManager.CaptureOutfit()
+
+    if not civilianOutfit then
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible capturar la ropa civil.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    PlayerData.CivilianOutfit = civilianOutfit
+
+    if not AppearanceManager.ApplyOutfit(dutyOutfit) then
+        AppearanceManager.ApplyOutfit(civilianOutfit)
+        PlayerData.DutyOutfit = nil
+
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible aplicar el uniforme policial.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    PlayerData.DutyOutfit = dutyOutfit
     PlayerData.OnDuty = true
     PlayerData.DispatchState = "WAITING"
 
@@ -27,9 +80,46 @@ local function startDuty()
         "Unidad " .. PlayerData.Unit .. " asignada. Permanezca atento.",
         {0, 255, 120}
     )
+
+    return true
 end
 
 local function stopDuty()
+    local civilianOutfit = PlayerData.CivilianOutfit
+
+    if type(civilianOutfit) ~= "table" then
+        local character = PlayerData.Character
+        local appearance = type(character) == "table"
+            and character.appearance
+            or nil
+        local appearanceData = type(appearance) == "table"
+            and appearance.data
+            or nil
+
+        if type(appearanceData) == "table" then
+            civilianOutfit = {
+                components = appearanceData.components,
+                props = appearanceData.props
+            }
+        end
+    end
+
+    if type(civilianOutfit) ~= "table"
+        or not AppearanceManager.ApplyOutfit(
+            civilianOutfit
+        ) then
+
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible restaurar la ropa civil.",
+            {255, 80, 80}
+        )
+
+        return false
+    end
+
+    PlayerData.CivilianOutfit = civilianOutfit
+    PlayerData.DutyOutfit = nil
     PlayerData.OnDuty = false
     PlayerData.DispatchState = "OFF_DUTY"
     PlayerData.Unit = nil
@@ -39,6 +129,8 @@ local function stopDuty()
         "Patrulla finalizada.",
         {255, 180, 0}
     )
+
+    return true
 end
 
 CreateThread(function()
