@@ -3,6 +3,34 @@ SentinelCase = SentinelCase or {
     NextId = 1
 }
 
+CaseManager = CaseManager or {}
+
+local function copyCaseData(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+
+    for key, item in pairs(value) do
+        if key ~= "startedTimer" then
+            result[key] = copyCaseData(item)
+        end
+    end
+
+    return result
+end
+
+function CaseManager.GetSnapshot()
+    return {
+        current = copyCaseData(SentinelCase.Current),
+        history = type(GetCaseHistory) == "function"
+            and copyCaseData(GetCaseHistory())
+            or {},
+        completedCases = PlayerData.CompletedCases or 0
+    }
+end
+
 local function getGameDateTime()
     return string.format(
         "Día %02d/%02d - %02d:%02d",

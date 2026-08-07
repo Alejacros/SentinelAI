@@ -142,10 +142,22 @@ local function stopDuty()
     return true
 end
 
+MenuManager = MenuManager or {}
+
+function MenuManager.StartDuty()
+    return startDuty()
+end
+
+function MenuManager.StopDuty()
+    return stopDuty()
+end
+
 CreateThread(function()
     while true do
         Wait(0)
 
+        -- TODO: retirar F1 cuando el flujo de turno en Police OS
+        -- quede validado como interfaz principal.
         if IsControlJustPressed(0, 288) then -- F1
             menuVisible = not menuVisible
         end

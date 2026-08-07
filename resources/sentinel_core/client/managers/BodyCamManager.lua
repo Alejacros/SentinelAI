@@ -213,6 +213,15 @@ function BodyCamManager.GetEntries()
     )
 end
 
+function BodyCamManager.GetSnapshot()
+    return {
+        active = BodyCamManager.Active == true,
+        startedAt = BodyCamManager.StartedAt,
+        entryCount = #BodyCamManager.Entries,
+        entries = BodyCamManager.GetEntries()
+    }
+end
+
 function BodyCamManager.AttachToCurrentCase()
     return attachRecordingToCurrentCase()
 end

@@ -12,7 +12,8 @@ ui_page 'html/index.html'
 files {
     'html/index.html',
     'html/style.css',
-    'html/app.js'
+    'html/app.js',
+    'html/icons.svg'
 }
 
 client_scripts {
@@ -27,6 +28,8 @@ client_scripts {
     'client/data/PoliceFleet.lua',
     'client/data/PoliceGarages.lua',
     'client/data/SentinelCommands.lua',
+    'client/data/TerminalModules.lua',
+    'client/data/WidgetLayout.lua',
 
     'client/bootstrap.lua',
 
@@ -37,6 +40,8 @@ client_scripts {
 
     'client/managers/PlayerManager.lua',
     'client/managers/CareerManager.lua',
+    'client/managers/PermissionManager.lua',
+    'client/managers/PoliceAlertManager.lua',
 
     'client/managers/HistoryManager.lua',
     'client/managers/CaseManager.lua',
@@ -70,6 +75,7 @@ client_scripts {
     'client/managers/DispatchManager.lua',
     'client/managers/EvidenceManager.lua',
     'client/managers/InteractionManager.lua',
+    'client/managers/PoliceTerminalManager.lua',
     'client/managers/MDTManager.lua',
     'client/managers/CaseReviewManager.lua',
 

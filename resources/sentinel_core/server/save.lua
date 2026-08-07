@@ -188,6 +188,18 @@ local function sanitizeHistory(history)
     return cleanHistory
 end
 
+local function maskIdentifier(identifier)
+    identifier = tostring(identifier or "unknown")
+    local identifierType, value = identifier:match("^([^:]+):(.+)$")
+
+    if not identifierType then
+        return "unknown:***"
+    end
+
+    local suffix = #value > 6 and value:sub(-6) or value
+    return ("%s:***%s"):format(identifierType, suffix)
+end
+
 local allowedGenderIdentities = {
     woman = true,
     man = true,
@@ -526,7 +538,7 @@ local function sanitizeCharacter(
     existingCharacter
 )
     if character == nil then
-        return nil, true
+        return nil, false
     end
 
     if type(character) ~= "table"
@@ -636,9 +648,13 @@ local function sanitizeCharacter(
 end
 
 local function sanitizeProfile(payload, existingProfile)
-    payload = type(payload) == "table"
-        and payload
-        or {}
+    if type(payload) ~= "table"
+        or tonumber(payload.xp) == nil
+        or tonumber(payload.completedCases) == nil
+        or type(payload.history) ~= "table" then
+
+        return nil, "INCOMPLETE_PROFILE_UPDATE"
+    end
 
     local character, characterValid =
         sanitizeCharacter(
@@ -649,7 +665,7 @@ local function sanitizeProfile(payload, existingProfile)
         )
 
     if not characterValid then
-        return nil
+        return nil, "INVALID_CHARACTER"
     end
 
     return {
@@ -672,7 +688,7 @@ local function sanitizeProfile(payload, existingProfile)
         character = character,
 
         updatedAt = os.time()
-    }
+    }, nil
 end
 
 RegisterNetEvent(
@@ -685,6 +701,16 @@ RegisterNetEvent(
 
         local profile =
             profiles[identifier]
+
+        print((
+            "[Sentinel AI] PROFILE LOAD | identifier=%s | existing=%s | hasCharacter=%s"
+        ):format(
+            maskIdentifier(identifier),
+            tostring(type(profile) == "table"),
+            tostring(type(profile) == "table"
+                and type(profile.character) == "table"
+                and profile.character.created == true)
+        ))
 
         if type(profile) ~= "table" then
             profile = {
@@ -716,13 +742,74 @@ RegisterNetEvent(
         local identifier =
             getPlayerIdentifier(sourceId)
 
-        local sanitizedProfile =
-            sanitizeProfile(
-                payload,
-                profiles[identifier]
-            )
+        payload = type(payload) == "table" and payload or {}
+        local operation = tostring(payload.operation or "UNKNOWN")
+        local reason = tostring(payload.reason or "UNSPECIFIED")
+        local clientState = type(payload.clientState) == "table"
+            and payload.clientState or {}
+        local existingProfile = profiles[identifier]
+        local existingCharacter = type(existingProfile) == "table"
+            and existingProfile.character or nil
+        local _, existingCharacterValid = sanitizeCharacter(
+            existingCharacter,
+            existingCharacter
+        )
+        local incomingCharacter, incomingCharacterValid = sanitizeCharacter(
+            payload.character,
+            existingCharacter
+        )
+        local existingHasCharacter = existingCharacterValid == true
+            and existingCharacter ~= nil
+        local incomingHasCharacter = incomingCharacterValid == true
+            and incomingCharacter ~= nil
 
-        if not sanitizedProfile then
+        print((
+            "[Sentinel AI] SAVE REQUEST | identifier=%s | operation=%s | reason=%s | loaded=%s | characterLoaded=%s | xp=%s | completedCases=%s | hasCharacter=%s"
+        ):format(
+            maskIdentifier(identifier),
+            operation,
+            reason,
+            tostring(clientState.loaded == true),
+            tostring(clientState.characterLoaded == true),
+            tostring(payload.xp),
+            tostring(payload.completedCases),
+            tostring(incomingHasCharacter)
+        ))
+
+        local rejectionReason = nil
+
+        if clientState.loaded ~= true
+            or clientState.characterLoaded ~= true then
+
+            rejectionReason = "CLIENT_PROFILE_NOT_READY"
+        elseif existingHasCharacter and not incomingHasCharacter then
+            rejectionReason = "EXISTING_CHARACTER_PROTECTED"
+        elseif operation == "PROFILE_CREATE" then
+            if existingHasCharacter then
+                rejectionReason = "CHARACTER_ALREADY_EXISTS"
+            elseif not incomingHasCharacter then
+                rejectionReason = "INVALID_CHARACTER_CREATE"
+            end
+        elseif operation == "PROFILE_UPDATE" then
+            if not existingHasCharacter then
+                rejectionReason = "PROFILE_CREATE_REQUIRED"
+            elseif not incomingHasCharacter then
+                rejectionReason = "INVALID_CHARACTER_UPDATE"
+            end
+        else
+            rejectionReason = "INVALID_PROFILE_OPERATION"
+        end
+
+        if rejectionReason then
+            print((
+                "[Sentinel AI] ERROR SAVE REJECTED | identifier=%s | operation=%s | reason=%s | error=%s"
+            ):format(
+                maskIdentifier(identifier),
+                operation,
+                reason,
+                rejectionReason
+            ))
+
             TriggerClientEvent(
                 "sentinel:client:profileSaved",
                 sourceId,
@@ -732,10 +819,39 @@ RegisterNetEvent(
             return
         end
 
-        profiles[identifier] =
-            sanitizedProfile
+        local sanitizedProfile, sanitizeError =
+            sanitizeProfile(
+                payload,
+                existingProfile
+            )
+
+        if not sanitizedProfile then
+            print((
+                "[Sentinel AI] ERROR SAVE REJECTED | identifier=%s | operation=%s | reason=%s | error=%s"
+            ):format(
+                maskIdentifier(identifier),
+                operation,
+                reason,
+                tostring(sanitizeError or "SANITIZE_FAILED")
+            ))
+
+            TriggerClientEvent(
+                "sentinel:client:profileSaved",
+                sourceId,
+                false
+            )
+
+            return
+        end
+
+        local previousProfile = profiles[identifier]
+        profiles[identifier] = sanitizedProfile
 
         local saved = saveProfiles()
+
+        if not saved then
+            profiles[identifier] = previousProfile
+        end
 
         TriggerClientEvent(
             "sentinel:client:profileSaved",

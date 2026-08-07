@@ -636,6 +636,43 @@ function VehicleManager.GetTransportCapacity()
     )
 end
 
+function VehicleManager.GetSnapshot()
+    local vehicle = PlayerData.Vehicle
+    local exists = vehicle
+        and vehicle ~= 0
+        and DoesEntityExist(vehicle)
+        or false
+    local coords = exists and GetEntityCoords(vehicle) or nil
+
+    return {
+        assigned = vehicle ~= nil,
+        handle = vehicle,
+        exists = exists,
+        model = VehicleManager.ActiveVehicleData
+            and VehicleManager.ActiveVehicleData.model
+            or nil,
+        label = VehicleManager.ActiveVehicleData
+            and VehicleManager.ActiveVehicleData.label
+            or nil,
+        role = VehicleManager.ActiveVehicleData
+            and VehicleManager.ActiveVehicleData.role
+            or nil,
+        state = VehicleManager.VehicleState,
+        engineHealth = exists and GetVehicleEngineHealth(vehicle) or nil,
+        bodyHealth = exists and GetVehicleBodyHealth(vehicle) or nil,
+        transportCapacity = VehicleManager.GetTransportCapacity(),
+        canTransportSuspects =
+            VehicleManager.CanTransportSuspects(),
+        coords = coords and {
+            x = coords.x,
+            y = coords.y,
+            z = coords.z
+        } or nil,
+        recoveryPending =
+            VehicleManager.VehicleState == "RECOVERY_PENDING"
+    }
+end
+
 function VehicleManager.ReturnPoliceVehicle()
     if not VehicleManager.HasActivePoliceVehicle() then
         return false, "no_active_vehicle"
@@ -812,6 +849,13 @@ local function openGarageMenu(garage)
         or VehicleManager.HasActivePoliceVehicle() then
 
         return false
+    end
+
+    if PoliceTerminalManager
+        and PoliceTerminalManager.IsOpen
+        and PoliceTerminalManager.IsOpen() then
+
+        PoliceTerminalManager.Close()
     end
 
     local availableFleet =

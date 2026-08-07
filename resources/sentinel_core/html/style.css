@@ -834,3 +834,705 @@ button {
         display: none;
     }
 }
+
+/* Sentinel Police Terminal foundation */
+.terminal-mode-badge {
+    display: inline-block;
+    margin-top: 7px;
+    padding: 5px 9px;
+    border: 1px solid rgba(83, 191, 255, 0.32);
+    border-radius: 999px;
+    color: #82d2ff;
+    background: rgba(45, 157, 222, 0.1);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+}
+
+.navigation {
+    min-height: 0;
+    padding-right: 4px;
+    overflow-y: auto;
+}
+
+.nav-button {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 12px;
+}
+
+.nav-button strong {
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nav-button small {
+    color: rgba(220, 237, 248, 0.38);
+    font-size: 8px;
+}
+
+.nav-button.locked,
+.nav-button.upcoming {
+    opacity: 0.57;
+    cursor: default;
+}
+
+.home-extras {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.terminal-mini-card {
+    min-height: 130px;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.085);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.terminal-mini-card > span {
+    display: block;
+    margin-bottom: 10px;
+    color: #5cbfff;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+}
+
+.terminal-mini-card > strong {
+    font-size: 15px;
+}
+
+.terminal-mini-card p {
+    margin: 8px 0 0;
+    color: rgba(221, 239, 251, 0.56);
+    font-size: 11px;
+}
+
+.terminal-mini-card button,
+.placeholder-panel button {
+    margin-top: 14px;
+    padding: 9px 13px;
+    border: 1px solid rgba(81, 186, 255, 0.4);
+    border-radius: 8px;
+    color: #dff3ff;
+    background: rgba(40, 156, 220, 0.13);
+    cursor: pointer;
+}
+
+.terminal-mini-card button:disabled,
+.placeholder-panel button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.unit-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+    margin-top: 20px;
+    padding: 15px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.035);
+    color: rgba(223, 240, 251, 0.65);
+    font-size: 11px;
+}
+
+.unit-details strong {
+    grid-column: 1 / -1;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+#mdt.mode-pda {
+    inset: 8vh 30vw 8vh 4vw;
+    grid-template-columns: 210px 1fr;
+}
+
+#mdt.mode-pda .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#mdt.mode-pda .content-grid,
+#mdt.mode-pda .home-extras {
+    grid-template-columns: 1fr;
+}
+
+#mdt.mode-pda .workspace {
+    overflow-y: auto;
+}
+
+#mdt.mode-driver-safe {
+    inset: auto 3vw 4vh auto;
+    width: min(720px, 94vw);
+    height: auto;
+    min-height: 330px;
+    display: grid;
+    grid-template-columns: 1fr;
+    pointer-events: none;
+}
+
+#mdt.mode-driver-safe .workspace {
+    padding: 20px 22px;
+}
+
+#mdt.mode-driver-safe .topbar {
+    min-height: 50px;
+    padding-bottom: 13px;
+}
+
+#mdt.mode-driver-safe .topbar h2 {
+    font-size: 20px;
+}
+
+#mdt.mode-driver-safe .workspace-footer {
+    display: none;
+}
+
+.driver-safe-panel {
+    padding-top: 15px;
+}
+
+.driver-safe-panel > header,
+.driver-safe-panel > footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.driver-safe-panel > header span {
+    color: #79cbff;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+}
+
+.driver-safe-panel > header strong {
+    font-size: 20px;
+}
+
+.safe-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.safe-grid article {
+    min-height: 112px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.safe-grid span {
+    color: #5cbfff;
+    font-size: 8px;
+    letter-spacing: 0.14em;
+}
+
+.safe-grid h3 {
+    margin: 9px 0 5px;
+    font-size: 14px;
+}
+
+.safe-grid p,
+.driver-safe-panel footer span {
+    margin: 0;
+    color: rgba(221, 239, 251, 0.58);
+    font-size: 10px;
+}
+
+.driver-safe-panel footer {
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 10px;
+}
+
+.driver-safe-panel footer strong {
+    color: #9adfff;
+}
+
+@media (max-width: 1200px) {
+    #mdt.mode-pda {
+        right: 18vw;
+    }
+}
+
+/* Police OS contextual UX pass */
+#mdt {
+    border-color: rgba(79, 190, 230, 0.28);
+    border-radius: 10px;
+    background:
+        linear-gradient(180deg, rgba(5, 13, 21, 0.975), rgba(4, 10, 17, 0.985)),
+        repeating-linear-gradient(90deg, transparent 0 39px, rgba(91, 202, 239, 0.018) 40px);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62), inset 0 1px rgba(129, 221, 255, 0.06);
+}
+
+.sidebar {
+    padding: 16px 10px;
+    border-right-color: rgba(109, 202, 235, 0.1);
+    background: rgba(6, 18, 29, 0.92);
+}
+
+.brand {
+    gap: 8px;
+    padding: 0 4px 14px;
+}
+
+.brand-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    font-size: 14px;
+}
+
+.brand p {
+    font-size: 7px;
+}
+
+.brand h1 {
+    font-size: 10px;
+}
+
+.navigation {
+    gap: 3px;
+    margin-top: 12px;
+}
+
+.nav-button {
+    min-height: 35px;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 7px;
+    padding: 7px 8px;
+    border-radius: 6px;
+}
+
+.terminal-icon,
+.alert-type-icon,
+.module-lock {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+    color: rgba(160, 207, 230, 0.67);
+}
+
+.nav-button.active .terminal-icon {
+    color: #6ed5fa;
+}
+
+.nav-button strong {
+    font-size: 9px;
+    letter-spacing: 0.035em;
+}
+
+.module-lock {
+    width: 10px;
+    height: 10px;
+    color: rgba(176, 194, 204, 0.52);
+}
+
+.module-badge {
+    padding: 2px 4px;
+    border: 1px solid rgba(160, 181, 193, 0.2);
+    border-radius: 3px;
+    color: rgba(188, 205, 214, 0.55);
+    font-size: 6px;
+    letter-spacing: 0.05em;
+}
+
+.sidebar-footer {
+    padding: 9px;
+    border-radius: 6px;
+}
+
+.sidebar-footer p {
+    margin-bottom: 3px;
+    font-size: 10px;
+}
+
+.sidebar-footer span {
+    font-size: 8px;
+}
+
+.workspace {
+    padding: 18px 22px 42px;
+}
+
+.topbar {
+    min-height: 48px;
+    padding-bottom: 12px;
+}
+
+.topbar h2 {
+    font-size: 19px;
+}
+
+.eyebrow,
+.panel-label,
+.placeholder-panel > span {
+    font-size: 8px;
+}
+
+.close-button {
+    padding: 7px 11px;
+    border-radius: 5px;
+    font-size: 9px;
+}
+
+.page {
+    padding-top: 14px;
+}
+
+.summary-grid {
+    gap: 8px;
+}
+
+.summary-card {
+    min-height: 70px;
+    padding: 12px;
+    border-radius: 7px;
+}
+
+.summary-card span {
+    margin-bottom: 8px;
+    font-size: 7px;
+}
+
+.summary-card strong {
+    font-size: 15px;
+}
+
+.content-grid,
+.home-extras {
+    gap: 9px;
+    margin-top: 9px;
+}
+
+.panel,
+.placeholder-panel,
+.terminal-mini-card {
+    min-height: 128px;
+    padding: 13px;
+    border-radius: 7px;
+}
+
+.panel-heading {
+    padding-bottom: 9px;
+}
+
+.panel-heading h3,
+.placeholder-panel h3 {
+    margin-top: 3px;
+    font-size: 13px;
+}
+
+.status-details {
+    gap: 6px;
+    margin-top: 9px;
+}
+
+.status-details div,
+.active-case {
+    padding: 9px;
+    border-radius: 6px;
+}
+
+.active-case {
+    gap: 5px;
+    margin-top: 9px;
+}
+
+.active-case strong,
+.terminal-mini-card > strong {
+    font-size: 13px;
+}
+
+.terminal-mini-card > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 7px;
+    font-size: 7px;
+}
+
+.terminal-mini-card p {
+    margin-top: 5px;
+    font-size: 9px;
+}
+
+.terminal-mini-card button,
+.placeholder-panel button {
+    margin-top: 9px;
+    padding: 7px 9px;
+    border-radius: 5px;
+    font-size: 8px;
+    letter-spacing: 0.04em;
+}
+
+.duty-card.is-on-duty {
+    border-color: rgba(67, 210, 139, 0.23);
+}
+
+.duty-card.is-on-duty > strong {
+    color: #72dba9;
+}
+
+.duty-card.is-off-duty {
+    border-color: rgba(236, 174, 73, 0.2);
+}
+
+.duty-card.is-off-duty > strong {
+    color: #dfb467;
+}
+
+.alert-emergency,
+.priority-emergency {
+    border-color: rgba(239, 75, 75, 0.42) !important;
+}
+
+.alert-high,
+.priority-high {
+    border-color: rgba(232, 158, 58, 0.38) !important;
+}
+
+.alert-normal,
+.priority-normal {
+    border-color: rgba(72, 190, 232, 0.25) !important;
+}
+
+.quick-actions button + button,
+.terminal-mini-card button + button,
+.placeholder-panel button + button {
+    margin-left: 5px;
+}
+
+.workspace-footer {
+    right: 22px;
+    bottom: 14px;
+    left: 22px;
+    font-size: 7px;
+}
+
+#mdt.mode-pda {
+    inset: 6vh auto 6vh 3vw;
+    width: min(760px, 92vw);
+    grid-template-columns: 142px minmax(0, 1fr);
+}
+
+#mdt.mode-pda .summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#mdt.mode-pda .content-grid,
+#mdt.mode-pda .home-extras {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#mdt.mode-vehicle-full {
+    inset: 5vh 7vw;
+    grid-template-columns: 168px minmax(0, 1fr);
+}
+
+#mdt.mode-driver-safe {
+    inset: auto 2.2vw 4vh auto;
+    width: 324px;
+    min-height: 0;
+    border-radius: 8px;
+}
+
+#mdt.mode-driver-safe .workspace {
+    padding: 12px;
+}
+
+#mdt.mode-driver-safe .topbar,
+#mdt.mode-driver-safe .workspace-footer {
+    display: none;
+}
+
+.driver-safe-panel {
+    padding: 0;
+}
+
+.driver-safe-panel > header {
+    padding-bottom: 9px;
+    border-bottom: 1px solid rgba(102, 205, 240, 0.13);
+}
+
+.driver-safe-panel > header div {
+    display: grid;
+    gap: 3px;
+}
+
+.driver-safe-panel > header span,
+.safe-status span,
+.safe-alert > span,
+.safe-dispatch > span {
+    color: #68c9ed;
+    font-size: 7px;
+    letter-spacing: 0.13em;
+}
+
+.driver-safe-panel > header strong {
+    font-size: 11px;
+}
+
+.driver-safe-panel > header b {
+    color: #f1f9fc;
+    font-size: 24px;
+    font-weight: 500;
+}
+
+.driver-safe-panel > header b small {
+    margin-left: 3px;
+    color: rgba(205, 228, 238, 0.5);
+    font-size: 7px;
+    font-weight: 500;
+}
+
+.safe-status,
+.safe-unit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.065);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.safe-status strong {
+    color: #72dba9;
+    font-size: 9px;
+}
+
+.safe-alert,
+.safe-dispatch {
+    margin-top: 8px;
+    padding: 9px;
+    border: 1px solid rgba(91, 197, 235, 0.14);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.safe-alert > span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.safe-alert h3,
+.safe-dispatch h3 {
+    margin: 6px 0 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.safe-alert p {
+    margin: 0;
+    color: rgba(207, 228, 238, 0.58);
+    font-size: 8px;
+    line-height: 1.35;
+}
+
+.safe-dispatch dl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    margin: 8px 0 0;
+}
+
+.safe-dispatch dl div {
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.safe-dispatch dt {
+    color: rgba(183, 212, 225, 0.4);
+    font-size: 6px;
+}
+
+.safe-dispatch dd {
+    margin: 3px 0 0;
+    font-size: 9px;
+}
+
+.safe-unit span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: rgba(214, 234, 243, 0.68);
+    font-size: 8px;
+}
+
+.safe-unit strong {
+    color: #72dba9;
+    font-size: 8px;
+}
+
+.driver-safe-panel footer {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.driver-safe-panel footer strong,
+.driver-safe-panel footer span {
+    font-size: 7px;
+}
+
+.driver-safe-panel footer span {
+    padding-top: 4px;
+    color: #dfb467;
+}
+
+@media (max-width: 1500px), (max-height: 850px) {
+    #mdt.mode-pda {
+        inset-block: 4vh;
+        width: min(720px, 94vw);
+    }
+
+    #mdt.mode-vehicle-full {
+        inset: 3vh 4vw;
+    }
+
+    .navigation {
+        gap: 1px;
+    }
+
+    .nav-button {
+        min-height: 30px;
+        padding-block: 5px;
+    }
+}
+
+@media (max-width: 900px) {
+    #mdt.mode-pda {
+        grid-template-columns: 58px minmax(0, 1fr);
+    }
+
+    #mdt.mode-pda .brand div,
+    #mdt.mode-pda .nav-button strong,
+    #mdt.mode-pda .sidebar-footer {
+        display: none;
+    }
+
+    #mdt.mode-pda .nav-button {
+        grid-template-columns: 1fr;
+        justify-items: center;
+    }
+
+    #mdt.mode-pda .nav-button small {
+        position: absolute;
+        margin: 0 0 18px 22px;
+    }
+}

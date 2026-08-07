@@ -1,5 +1,7 @@
 print("[Sentinel AI] Cargando DispatchManager...")
 
+DispatchManager = DispatchManager or {}
+
 local dispatchDelay = 15000
 local nextDispatchAt = nil
 
@@ -9,6 +11,7 @@ local lastLocationByType = {}
 local scenePreparing = false
 local scenePrepared = false
 local sceneSpawned = false
+local currentDispatchAlertId = nil
 
 -- =========================================================
 -- LIMPIEZA DEL DESPACHO
@@ -42,6 +45,13 @@ local function resetSceneRuntime()
 end
 
 local function resetDispatch()
+    if currentDispatchAlertId
+        and PoliceAlertManager then
+
+        PoliceAlertManager.Remove(currentDispatchAlertId)
+    end
+
+    currentDispatchAlertId = nil
     removeDispatchBlip()
     resetSceneRuntime()
 
@@ -186,6 +196,29 @@ local function sendRandomDispatch()
         ),
         {255, 80, 80}
     )
+
+    if PoliceAlertManager then
+        currentDispatchAlertId = PoliceAlertManager.Push({
+            type = "DISPATCH",
+            source = "DISPATCH",
+            title = "Nuevo despacho",
+            message = ("Código %s — %s"):format(
+                selectedDispatch.code,
+                selectedDispatch.title
+            ),
+            priority = "HIGH",
+            persistent = true,
+            actions = {
+                {id = "dispatch.accept", label = "Aceptar", available = true},
+                {id = "dispatch.decline", label = "Rechazar", available = false}
+            },
+            metadata = {
+                code = selectedDispatch.code,
+                title = selectedDispatch.title,
+                location = selectedDispatch.location
+            }
+        })
+    end
 
     return true
 end
@@ -378,6 +411,14 @@ local function acceptDispatch()
     PlayerData.CurrentDispatch = incident
     PlayerData.DispatchState = "EN_ROUTE"
 
+    if currentDispatchAlertId and PoliceAlertManager then
+        PoliceAlertManager.Update(currentDispatchAlertId, {
+            acknowledged = true,
+            persistent = false,
+            expiresAt = GetGameTimer() + 3000
+        })
+    end
+
     resetSceneRuntime()
 
     createDispatchBlip(incident)
@@ -408,6 +449,47 @@ local function acceptDispatch()
     end
 
     return true
+end
+
+function DispatchManager.AcceptCurrent()
+    return acceptDispatch()
+end
+
+function DispatchManager.GetSnapshot()
+    local dispatch = PlayerData.CurrentDispatch
+    local state = PlayerData.DispatchState or "OFF_DUTY"
+    local lifecycle = state == "PENDING" and "PENDING"
+        or ((state == "EN_ROUTE"
+            or state == "ON_SCENE"
+            or state == "EVIDENCE"
+            or state == "TRANSPORT"
+            or state == "REPORT") and "ACTIVE")
+        or "NONE"
+    local distance = nil
+
+    if dispatch and dispatch.location then
+        distance = #(
+            GetEntityCoords(PlayerPedId()) - dispatch.location
+        )
+    end
+
+    return {
+        lifecycle = lifecycle,
+        phase = state,
+        pending = state == "PENDING",
+        active = lifecycle == "ACTIVE",
+        code = dispatch and dispatch.code or nil,
+        title = dispatch and dispatch.title or nil,
+        type = dispatch and dispatch.type or nil,
+        location = dispatch and dispatch.location and {
+            x = dispatch.location.x,
+            y = dispatch.location.y,
+            z = dispatch.location.z
+        } or nil,
+        distance = distance,
+        canAccept = state == "PENDING",
+        canDecline = false
+    }
 end
 
 -- =========================================================

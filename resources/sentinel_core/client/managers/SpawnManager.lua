@@ -243,7 +243,7 @@ function SpawnPlayerCharacter()
 
             appearance.version = 1
             appearance.data = captured
-            SaveProgress(false)
+            SaveProgress(false, "APPEARANCE_CAPTURED")
             fullAppearanceApplied = true
         end
     end

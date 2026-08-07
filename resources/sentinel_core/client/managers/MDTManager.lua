@@ -1,142 +1,117 @@
-local mdtOpen = false
-
-local statusLabels = {
-    OFF_DUTY = "Fuera de servicio",
-    WAITING = "Esperando despacho",
-    PENDING = "Despacho pendiente",
-    EN_ROUTE = "En ruta",
-    ON_SCENE = "En escena",
-    EVIDENCE = "Buscando evidencia",
-    REPORT = "Procesando informe"
+MDTManager = {
+    Opened = false,
+    Focused = false,
+    Mode = "PDA"
 }
 
-local function serializeHistory()
-    local result = {}
-    local history = GetCaseHistory() or {}
-
-    for index, caseData in ipairs(history) do
-        result[index] = {
-            id = caseData.id or index,
-            code = caseData.code or "000",
-            title = caseData.title or "Incidente",
-            state = caseData.state or "COMPLETED",
-            witness = caseData.witness or "",
-            evidence = caseData.evidence or {},
-            xp = caseData.xp or 0,
-            startedAt = caseData.startedAt or "",
-            completedAt = caseData.completedAt or "",
-            durationSeconds = caseData.durationSeconds or 0
-        }
-    end
-
-    return result
+function MDTManager.SetFocus(enabled)
+    MDTManager.Focused = enabled == true
+    SetNuiFocus(MDTManager.Focused, MDTManager.Focused)
 end
 
-local function buildMdtData()
-    local dispatch = nil
-
-    if PlayerData.CurrentDispatch then
-        dispatch = {
-            code = PlayerData.CurrentDispatch.code,
-            title = PlayerData.CurrentDispatch.title
-        }
-    end
-
-    local history = serializeHistory()
-
-    return {
-        rank = PlayerData.Rank or "Cadete",
-        unit = PlayerData.Unit or "Sin asignar",
-        xp = PlayerData.XP or 0,
-        completedCases = PlayerData.CompletedCases or 0,
-
-        status = statusLabels[PlayerData.DispatchState]
-            or "Sin estado",
-
-        dispatch = dispatch,
-        caseHistory = history,
-        caseHistoryCount = #history
-    }
+function MDTManager.IsOpen()
+    return MDTManager.Opened == true
 end
 
-local function sendMdtData(action)
-    local data = buildMdtData()
-
-    print(
-        ("[Sentinel AI] Enviando MDT: %d casos archivados.")
-            :format(data.caseHistoryCount)
-    )
+function MDTManager.Open(mode, snapshot)
+    MDTManager.Opened = true
+    MDTManager.Mode = mode or "PDA"
+    MDTManager.SetFocus(MDTManager.Mode ~= "DRIVER_SAFE")
 
     SendNUIMessage({
-        action = action,
-        data = data
+        action = "terminal:open",
+        mode = MDTManager.Mode,
+        data = snapshot or {}
     })
+
+    return true
 end
 
-local function openMdt()
-    if mdtOpen then
-        return
+function MDTManager.Update(domain, data)
+    if not MDTManager.Opened then
+        return false
     end
 
-    mdtOpen = true
+    if domain == "mode" or domain == "context" then
+        SendNUIMessage({
+            action = "terminal:mode",
+            data = data or {}
+        })
 
-    SetNuiFocus(true, true)
-    sendMdtData("open")
+        if data and data.modules then
+            SendNUIMessage({
+                action = "terminal:modules",
+                data = data.modules
+            })
+        end
+    elseif domain == "alerts" then
+        SendNUIMessage({
+            action = "terminal:alert",
+            data = data or {}
+        })
+    else
+        SendNUIMessage({
+            action = "terminal:update",
+            domain = domain,
+            data = data or {}
+        })
+    end
+
+    return true
 end
 
-local function closeMdt()
-    if not mdtOpen then
-        return
+function MDTManager.Close()
+    if not MDTManager.Opened then
+        return false
     end
 
-    mdtOpen = false
+    MDTManager.Opened = false
+    MDTManager.SetFocus(false)
 
-    SetNuiFocus(false, false)
-
-    SendNUIMessage({
-        action = "close"
-    })
+    SendNUIMessage({action = "terminal:close"})
+    return true
 end
 
 RegisterCommand("sentinel_tablet", function()
-    if mdtOpen then
-        closeMdt()
-    else
-        openMdt()
-    end
+    PoliceTerminalManager.Toggle()
 end, false)
 
 RegisterKeyMapping(
     "sentinel_tablet",
-    "Abrir tablet policial Sentinel MDT",
+    "Abrir Sentinel Police Terminal",
     "keyboard",
     "F7"
 )
 
 RegisterNUICallback("closeMdt", function(_, callback)
-    closeMdt()
-
-    callback({
-        ok = true
-    })
+    PoliceTerminalManager.Close()
+    callback({ok = true})
 end)
 
 RegisterNUICallback("requestMdtData", function(_, callback)
-    callback(buildMdtData())
+    callback(PoliceTerminalManager.GetSnapshot())
 end)
 
-CreateThread(function()
-    while true do
-        Wait(500)
+RegisterNUICallback("terminal:openModule", function(data, callback)
+    local ok, reason = PoliceTerminalManager.OpenModule(
+        data and data.moduleId
+    )
 
-        if mdtOpen then
-            sendMdtData("update")
-        end
-    end
+    callback({ok = ok == true, error = reason})
+end)
+
+RegisterNUICallback("terminal:action", function(data, callback)
+    local ok, reason = PoliceTerminalManager.ExecuteAction(
+        data and data.actionId,
+        data and data.payload
+    )
+
+    callback({ok = ok == true, error = reason})
 end)
 
 AddEventHandler("onResourceStop", function(resourceName)
     if resourceName == GetCurrentResourceName() then
-        SetNuiFocus(false, false)
+        MDTManager.Opened = false
+        MDTManager.SetFocus(false)
     end
 end)

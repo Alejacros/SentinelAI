@@ -353,7 +353,11 @@ RegisterNUICallback(
                 CharacterManager.SavePending = true
                 PlayerData.Character = character
 
-                if not SaveProgress(true) then
+                if not SaveProgress(
+                    true,
+                    "CHARACTER_CREATION_CONFIRMED",
+                    {profileCreate = true}
+                ) then
                     CharacterManager.SavePending = false
 
                     restoreCreatorAfterAppearanceError(
