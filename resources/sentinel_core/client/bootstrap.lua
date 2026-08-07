@@ -1,8 +1,4 @@
-Sentinel = {
-    Name = "Sentinel AI",
-    Version = "0.2.0-prealpha",
-    Ready = false
-}
+Sentinel.Ready = false
 
 function Sentinel.Notify(title, message, color)
     TriggerEvent("chat:addMessage", {
@@ -20,10 +16,15 @@ CreateThread(function()
 
     Sentinel.Ready = true
 
-    print(("[%s] Cliente iniciado - versión %s"):format(
-        Sentinel.Name,
-        Sentinel.Version
-    ))
+    print("====================================")
+    print(Sentinel.Name)
+    print(("Version: %s"):format(Sentinel.Version))
+    print("====================================")
+
+    SendNUIMessage({
+        action = "sentinel:version",
+        version = Sentinel.Version
+    })
 
     Sentinel.Notify(
         Sentinel.Name,

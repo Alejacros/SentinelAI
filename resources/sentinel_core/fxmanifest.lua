@@ -3,7 +3,9 @@ game 'gta5'
 
 author 'Alejacros'
 description 'Sentinel AI Police Career Simulator'
-version '1.5.0-prealpha'
+version '0.3.0-prealpha'
+
+shared_script 'shared/version.lua'
 
 ui_page 'html/index.html'
 

@@ -1,4 +1,4 @@
 print("^2====================================^7")
-print("^2 Sentinel AI Core iniciado^7")
-print("^2 Version: 0.1.0-alpha^7")
+print(("^2%s^7"):format(Sentinel.Name))
+print(("^2Version: %s^7"):format(Sentinel.Version))
 print("^2====================================^7")

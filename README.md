@@ -6,7 +6,7 @@ Police Career Simulator para FiveM.
 
 🚧 En desarrollo
 
-Versión: 0.1.0-alpha
+Versión: 0.3.0-prealpha
 
 ## Objetivo
 

@@ -39,6 +39,8 @@ const characterError =
     document.getElementById("characterError");
 const characterSubmit =
     document.getElementById("characterSubmit");
+const sentinelVersion =
+    document.getElementById("sentinelVersion");
 
 const pageTitles = {
     dashboard: "Dashboard",
@@ -234,6 +236,11 @@ function updateMdt(data = {}) {
 
 window.addEventListener("message", (event) => {
     const message = event.data || {};
+
+    if (message.action === "sentinel:version") {
+        sentinelVersion.textContent =
+            `Sentinel AI v${message.version}`;
+    }
 
     if (message.action === "open") {
         updateMdt(message.data);
