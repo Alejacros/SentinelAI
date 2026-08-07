@@ -5,23 +5,53 @@ local ranks = {
     },
     {
         name = "Oficial",
-        requiredXP = 100
-    },
-    {
-        name = "Oficial II",
-        requiredXP = 250
-    },
-    {
-        name = "Cabo",
         requiredXP = 500
     },
     {
-        name = "Sargento",
-        requiredXP = 900
+        name = "Oficial II",
+        requiredXP = 1000
     },
     {
+        name = "Cabo",
+        requiredXP = 2500
+    },
+    {
+        name = "Sargento",
+        requiredXP = 5000
+    },
+    {
+        name = "Subteniente",
+        requiredXP = 8000
+    }
+    ,
+    {
         name = "Teniente",
-        requiredXP = 1500
+        requiredXP = 10000
+    }
+    ,
+    {
+        name = "Capitan",
+        requiredXP = 15000
+    }
+    ,
+    {
+        name = "Mayor",
+        requiredXP = 20000
+    }
+    ,
+    {
+        name = "General",
+        requiredXP = 50000
+    }
+    ,
+    {
+        name = "Brigadier General",
+        requiredXP = 80000
+    }
+    ,
+     {
+        name = "Comandante General",
+        requiredXP = 100000
     }
 }
 
@@ -87,9 +117,6 @@ function AwardXP(amount)
 
     PlayerData.XP =
         PlayerData.XP + amount
-
-    PlayerData.CompletedCases =
-        PlayerData.CompletedCases + 1
 
     local currentRank =
         getRankForXP(PlayerData.XP)

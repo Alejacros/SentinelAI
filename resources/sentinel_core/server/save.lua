@@ -1,7 +1,57 @@
 local RESOURCE_NAME = GetCurrentResourceName()
 local SAVE_FILE = "data/profiles.json"
 
+print(
+    ("[Sentinel AI] RUNTIME PATH | resource=%s | path=%s | save=%s")
+        :format(
+            tostring(RESOURCE_NAME),
+            tostring(GetResourcePath(RESOURCE_NAME)),
+            tostring(SAVE_FILE)
+        )
+)
+
 local profiles = {}
+
+print(
+    "[Sentinel AI] Perfil persistente: "
+        .. SAVE_FILE
+)
+
+local function countProfiles()
+    local count = 0
+
+    for _ in pairs(profiles) do
+        count = count + 1
+    end
+
+    return count
+end
+
+local function writeProfiles(encoded)
+    local successWrite, result =
+        pcall(
+            SaveResourceFile,
+            RESOURCE_NAME,
+            SAVE_FILE,
+            encoded,
+            -1
+        )
+
+    if not successWrite or not result then
+        print(
+            "[Sentinel AI] ERROR escribiendo profiles.json: "
+                .. tostring(result)
+        )
+
+        return false
+    end
+
+    print(
+        "[Sentinel AI] profiles.json guardado correctamente."
+    )
+
+    return true
+end
 
 local function loadProfiles()
     local rawData = LoadResourceFile(
@@ -12,15 +62,15 @@ local function loadProfiles()
     if not rawData or rawData == "" then
         profiles = {}
 
-        SaveResourceFile(
-            RESOURCE_NAME,
-            SAVE_FILE,
-            "{}",
-            -1
-        )
+        if writeProfiles("{}") then
+            print(
+                "[Sentinel AI] Base de perfiles creada."
+            )
+        end
 
         print(
-            "[Sentinel AI] Base de perfiles creada."
+            ("[Sentinel AI] Perfiles cargados: %d")
+                :format(countProfiles())
         )
 
         return
@@ -44,7 +94,8 @@ local function loadProfiles()
     profiles = decoded
 
     print(
-        "[Sentinel AI] Perfiles cargados correctamente."
+        ("[Sentinel AI] Perfiles cargados: %d")
+            :format(countProfiles())
     )
 end
 
@@ -60,25 +111,7 @@ local function saveProfiles()
         return false
     end
 
-    local successWrite, result =
-        pcall(
-            SaveResourceFile,
-            RESOURCE_NAME,
-            SAVE_FILE,
-            encoded,
-            -1
-        )
-
-    if not successWrite then
-        print(
-            "[Sentinel AI] ERROR escribiendo profiles.json: "
-                .. tostring(result)
-        )
-
-        return false
-    end
-
-    return true
+    return writeProfiles(encoded)
 end
 
 local function getPlayerIdentifier(sourceId)

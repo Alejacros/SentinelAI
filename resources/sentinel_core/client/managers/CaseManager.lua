@@ -164,6 +164,9 @@ function CompleteCase(xpAmount)
         return false
     end
 
+    PlayerData.CompletedCases =
+        PlayerData.CompletedCases + 1
+
     SentinelCase.Current = nil
 
     return true

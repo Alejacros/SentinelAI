@@ -257,12 +257,15 @@ local function completeCaseWithoutCustody()
         CleanupCrimeScene()
     end
 
-    if type(AwardXP) == "function" then
-        AwardXP(earnedXP)
-    end
-
     if type(CompleteCase) == "function" then
-        CompleteCase(earnedXP)
+        local completed =
+            CompleteCase(earnedXP)
+
+        if completed
+            and type(AwardXP) == "function" then
+
+            AwardXP(earnedXP)
+        end
     end
 
     if type(CompleteCurrentDispatch) == "function" then

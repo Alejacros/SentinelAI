@@ -21,3 +21,6 @@ Desktop.ini
 # FiveM Server
 server/*
 !server/.gitkeep
+
+# Sentinel AI persistent profiles
+resources/sentinel_core/data/profiles.json

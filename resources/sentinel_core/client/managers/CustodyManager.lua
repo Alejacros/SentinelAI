@@ -207,8 +207,9 @@ local function completeCustody()
 
     PlayerData.DispatchState = "REPORT"
 
-    AwardXP(earnedXP)
-    CompleteCase(earnedXP)
+    if CompleteCase(earnedXP) then
+        AwardXP(earnedXP)
+    end
 
     CleanupCrimeScene()
     CompleteCurrentDispatch()

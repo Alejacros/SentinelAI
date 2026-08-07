@@ -13,11 +13,10 @@ PatrolEventManager = {
 
 local EVENT_GROUP = "patrol_micro_event"
 
--- Para probar rápido. Después podemos aumentarlo.
 local MIN_EVENT_DELAY = 35000
 local MAX_EVENT_DELAY = 70000
-
-local EVENT_DURATION = 180000
+local EVENT_DURATION = 300000
+local ARRIVAL_EXTENSION = 120000
 
 local eventDefinitions = {
     {
@@ -86,16 +85,19 @@ local function scheduleNextEvent()
 end
 
 local function isPatrolAvailable()
+    local missionActive =
+        MissionManager
+        and MissionManager.Active == true
+
     return PlayerData
         and PlayerData.OnDuty == true
         and PlayerData.DispatchState == "WAITING"
-        and not MissionManager.Active
+        and not missionActive
 end
 
 local function getSpawnCenter()
-    local playerPed = PlayerPedId()
     local playerCoords =
-        GetEntityCoords(playerPed)
+        GetEntityCoords(PlayerPedId())
 
     local angle =
         math.rad(math.random(0, 359))
@@ -127,10 +129,7 @@ local function getSafeVehiclePosition(center)
     return center, 0.0
 end
 
-local function getSafePedPosition(
-    center,
-    blockedPositions
-)
+local function getSafePedPosition(center, blockedPositions)
     if SpawnPointManager
         and type(
             SpawnPointManager.FindSafePedPosition
@@ -162,51 +161,90 @@ local function removeBlip()
     PatrolEventManager.Blip = nil
 end
 
-function PatrolEventManager.Clear(
-    scheduleAgain
-)
+function PatrolEventManager.Clear(scheduleAgain)
     removeBlip()
 
+    local ped =
+        PatrolEventManager.Entity
+
+    local vehicle =
+        PatrolEventManager.Vehicle
+
+    if ped
+        and DoesEntityExist(ped) then
+
+        ClearPedTasksImmediately(ped)
+
+        SetBlockingOfNonTemporaryEvents(
+            ped,
+            false
+        )
+
+        FreezeEntityPosition(
+            ped,
+            false
+        )
+
+        SetEntityAsMissionEntity(
+            ped,
+            true,
+            true
+        )
+
+        DeletePed(ped)
+
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+        end
+    end
+
+    if vehicle
+        and DoesEntityExist(vehicle) then
+
+        SetVehicleEngineOn(
+            vehicle,
+            false,
+            true,
+            true
+        )
+
+        SetEntityAsMissionEntity(
+            vehicle,
+            true,
+            true
+        )
+
+        DeleteVehicle(vehicle)
+
+        if DoesEntityExist(vehicle) then
+            DeleteEntity(vehicle)
+        end
+    end
+
     if EntityManager
-        and type(
-            EntityManager.CleanupGroup
-        ) == "function" then
+        and type(EntityManager.CleanupGroup)
+            == "function" then
 
         EntityManager.CleanupGroup(
             EVENT_GROUP,
             true
         )
-    else
-        if PatrolEventManager.Entity
-            and DoesEntityExist(
-                PatrolEventManager.Entity
-            ) then
-
-            DeleteEntity(
-                PatrolEventManager.Entity
-            )
-        end
-
-        if PatrolEventManager.Vehicle
-            and DoesEntityExist(
-                PatrolEventManager.Vehicle
-            ) then
-
-            DeleteEntity(
-                PatrolEventManager.Vehicle
-            )
-        end
     end
 
     PatrolEventManager.Active = false
     PatrolEventManager.Event = nil
     PatrolEventManager.Entity = nil
     PatrolEventManager.Vehicle = nil
+    PatrolEventManager.Blip = nil
     PatrolEventManager.InteractionLocked = false
 
     if scheduleAgain ~= false then
         scheduleNextEvent()
     end
+
+    print(
+        "[Sentinel AI] Microevento limpiado completamente."
+    )
 end
 
 local function createEventBlip(coords, title)
@@ -354,7 +392,8 @@ local function spawnPatrolEvent()
         reward =
             tonumber(definition.reward) or 0,
 
-        startedAt = GetGameTimer()
+        startedAt = GetGameTimer(),
+        extended = false
     }
 
     PatrolEventManager.Entity = ped
@@ -462,8 +501,7 @@ local function completeEvent()
         return
     end
 
-    PatrolEventManager.InteractionLocked =
-        true
+    PatrolEventManager.InteractionLocked = true
 
     local event =
         PatrolEventManager.Event
@@ -476,9 +514,7 @@ local function completeEvent()
     elseif event.id == "CITIZEN_HELP" then
         resolveCitizenHelp()
 
-    elseif event.id
-        == "SUSPICIOUS_VEHICLE" then
-
+    elseif event.id == "SUSPICIOUS_VEHICLE" then
         bonusXP =
             resolveSuspiciousVehicle()
     end
@@ -516,7 +552,7 @@ local function completeEvent()
     end
 
     CreateThread(function()
-        Wait(1800)
+        Wait(1000)
         PatrolEventManager.Clear(true)
     end)
 end
@@ -559,18 +595,63 @@ CreateThread(function()
             if not isPatrolAvailable() then
                 PatrolEventManager.Clear(true)
 
-            elseif PatrolEventManager.Event
-                and GetGameTimer()
+            elseif PatrolEventManager.Event then
+                local elapsed =
+                    GetGameTimer()
                     - PatrolEventManager.Event.startedAt
-                    >= EVENT_DURATION then
 
-                notify(
-                    "CENTRAL",
-                    "El incidente menor fue atendido por otra unidad.",
-                    {150, 150, 150}
-                )
+                if elapsed >= EVENT_DURATION then
+                    local eventCoords = nil
 
-                PatrolEventManager.Clear(true)
+                    if PatrolEventManager.Entity
+                        and DoesEntityExist(
+                            PatrolEventManager.Entity
+                        ) then
+
+                        eventCoords =
+                            GetEntityCoords(
+                                PatrolEventManager.Entity
+                            )
+                    end
+
+                    local playerIsClose = false
+
+                    if eventCoords then
+                        local playerCoords =
+                            GetEntityCoords(
+                                PlayerPedId()
+                            )
+
+                        playerIsClose =
+                            #(playerCoords - eventCoords)
+                            <= 120.0
+                    end
+
+                    if playerIsClose
+                        and not PatrolEventManager.Event.extended then
+
+                        PatrolEventManager.Event.startedAt =
+                            GetGameTimer()
+                            - EVENT_DURATION
+                            + ARRIVAL_EXTENSION
+
+                        PatrolEventManager.Event.extended = true
+
+                        notify(
+                            "CENTRAL",
+                            "Unidad próxima al incidente menor. Tiempo de atención extendido.",
+                            {90, 190, 255}
+                        )
+                    else
+                        notify(
+                            "CENTRAL",
+                            "El incidente menor fue atendido por otra unidad.",
+                            {150, 150, 150}
+                        )
+
+                        PatrolEventManager.Clear(true)
+                    end
+                end
             end
 
         elseif isPatrolAvailable()

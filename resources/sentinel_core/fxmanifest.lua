@@ -43,6 +43,7 @@ client_scripts {
     'client/managers/HUDManager.lua',
     'client/managers/PatrolManager.lua',
     'client/managers/PatrolEventManager.lua',
+    'client/managers/CityLifeManager.lua',
 
     'client/managers/SceneDirectorManager.lua',
     'client/managers/IncidentVariantManager.lua',
