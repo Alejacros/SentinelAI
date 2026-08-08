@@ -188,6 +188,17 @@ local function sanitizeHistory(history)
     return cleanHistory
 end
 
+function GetSentinelProfileSnapshot(sourceId)
+    local identifier = getPlayerIdentifier(sourceId)
+    local profile = profiles[identifier]
+    if type(profile) ~= "table" then return nil end
+    return {
+        xp = math.max(0, tonumber(profile.xp) or 0),
+        hasCharacter = type(profile.character) == "table"
+            and profile.character.created == true
+    }
+end
+
 local function maskIdentifier(identifier)
     identifier = tostring(identifier or "unknown")
     local identifierType, value = identifier:match("^([^:]+):(.+)$")

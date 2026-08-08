@@ -1,59 +1,4 @@
-local ranks = {
-    {
-        name = "Cadete",
-        requiredXP = 0
-    },
-    {
-        name = "Oficial",
-        requiredXP = 500
-    },
-    {
-        name = "Oficial II",
-        requiredXP = 1000
-    },
-    {
-        name = "Cabo",
-        requiredXP = 2500
-    },
-    {
-        name = "Sargento",
-        requiredXP = 5000
-    },
-    {
-        name = "Subteniente",
-        requiredXP = 8000
-    }
-    ,
-    {
-        name = "Teniente",
-        requiredXP = 10000
-    }
-    ,
-    {
-        name = "Capitan",
-        requiredXP = 15000
-    }
-    ,
-    {
-        name = "Mayor",
-        requiredXP = 20000
-    }
-    ,
-    {
-        name = "General",
-        requiredXP = 50000
-    }
-    ,
-    {
-        name = "Brigadier General",
-        requiredXP = 80000
-    }
-    ,
-     {
-        name = "Comandante General",
-        requiredXP = 100000
-    }
-}
+local ranks = SentinelCareer.Ranks
 
 function GetCareerRanks()
     local careerRanks = {}
@@ -69,36 +14,15 @@ function GetCareerRanks()
 end
 
 function GetRankIndex(rankName)
-    for index, rank in ipairs(ranks) do
-        if rank.name == rankName then
-            return index
-        end
-    end
-
-    return nil
+    return SentinelCareer.GetRankIndex(rankName)
 end
 
 function IsRankAtLeast(currentRank, requiredRank)
-    local currentIndex = GetRankIndex(currentRank)
-    local requiredIndex = GetRankIndex(requiredRank)
-
-    return currentIndex ~= nil
-        and requiredIndex ~= nil
-        and currentIndex >= requiredIndex
+    return SentinelCareer.IsRankAtLeast(currentRank, requiredRank)
 end
 
 local function getRankForXP(xp)
-    local selectedRank = ranks[1]
-
-    for _, rank in ipairs(ranks) do
-        if xp >= rank.requiredXP then
-            selectedRank = rank
-        else
-            break
-        end
-    end
-
-    return selectedRank
+    return SentinelCareer.GetRankForXP(xp)
 end
 
 function GetNextRank()

@@ -288,21 +288,8 @@ function MissionManager.EndMission(
     cleanupManagers(reason)
 
     if not preserveDispatchState then
-        local assignment = MissionManager.AssignmentId
-            and AssignmentManager.GetSnapshot(MissionManager.AssignmentId)
-            or nil
-        if assignment and (assignment.status == "PENDING"
-            or assignment.status == "ASSIGNED"
-            or assignment.status == "ACTIVE") then
-            AssignmentManager.Cancel(assignment.id)
-        end
-
-        local incident = MissionManager.IncidentId
-            and IncidentManager.GetSnapshot(MissionManager.IncidentId)
-            or nil
-        if incident and (incident.status == "NEW"
-            or incident.status == "ACTIVE") then
-            IncidentManager.Cancel(incident.id)
+        if DispatchManager and DispatchManager.CancelActive then
+            DispatchManager.CancelActive(reason or "MISSION_CANCELLED")
         end
     end
 

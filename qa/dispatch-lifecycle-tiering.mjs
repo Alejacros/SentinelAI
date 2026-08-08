@@ -53,15 +53,14 @@ const assignment = readFileSync("resources/sentinel_core/client/managers/Assignm
 const terminal = readFileSync("resources/sentinel_core/client/managers/PoliceTerminalManager.lua", "utf8");
 const app = readFileSync("resources/sentinel_core/html/app.js", "utf8");
 const config = readFileSync("resources/sentinel_core/client/data/DispatchConfig.lua", "utf8");
+const dispatchServer = readFileSync("resources/sentinel_core/server/dispatch.lua", "utf8");
 assert.match(dispatch, /function DispatchManager\.IsAssignmentEligible/);
-assert.match(dispatch, /IsRankAtLeast\(rank, assignment\.minimumRank/);
+assert.match(dispatch, /IsRankAtLeast\(context\.rank or getRank\(\),/);
 assert.match(dispatch, /function DispatchManager\.EnqueueAssignment/);
 assert.match(dispatch, /function DispatchManager\.Decline/);
-assert.match(dispatch, /AssignmentManager\.Expire/);
-assert.match(dispatch, /getOperationalStatus\(\) ~= "AVAILABLE"/);
+assert.match(dispatchServer, /assignment\.status, assignment\.updatedAt = "EXPIRED"/);
 assert.doesNotMatch(dispatch, /PatrolEventManager\.Active/);
-assert.match(assignment, /operationalTier = tostring/);
-assert.match(assignment, /requiredCertifications = copy/);
+assert.match(assignment, /SERVER_AUTHORITY/);
 assert.match(terminal, /DispatchManager\.Decline\(payload\.assignmentId\)/);
 assert.match(terminal, /\{source = "MANUAL"\}/);
 assert.match(app, /cad-assignment-list/);
@@ -69,16 +68,12 @@ assert.match(app, /NO AUTORIZADO/);
 
 // T4B autoaccept regression: generation only enqueues, and every acceptance
 // must declare whether it came from CAD or the delayed autoassignment path.
-const enqueueBody = dispatch.slice(
-    dispatch.indexOf("function DispatchManager.Enqueue(dispatch)"),
-    dispatch.indexOf("function DispatchManager.EnqueueAssignment")
-);
-assert.doesNotMatch(enqueueBody, /CreateCurrentCase|StartMission|CurrentDispatch\s*=/);
+assert.match(dispatch, /function DispatchManager\.Enqueue\(\) return nil, "SERVER_AUTHORITY"/);
 assert.doesNotMatch(dispatch, /IsControlJustPressed\(0, 246\)/);
 assert.match(dispatch, /source ~= "MANUAL" and source ~= "AUTOASSIGN"/);
 assert.match(dispatch, /\[Dispatch ACCEPT TRACE\]/);
-assert.match(dispatch, /ageMs >= DispatchLifecycleConfig\.autoAssignDelay/);
-assert.match(dispatch, /source = "AUTOASSIGN"/);
+assert.match(dispatchServer, /RegisterNetEvent\("sentinel:server:dispatch:accept"/);
+assert.match(dispatchServer, /assignment\.status = "ASSIGNED"/);
 assert.match(config, /autoAssignEnabled = false/);
 
 const autoAssignDelay = 45000;

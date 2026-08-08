@@ -56,6 +56,7 @@ local function startDuty()
     PlayerData.DispatchState = "WAITING"
 
     AssignRandomUnit()
+    TriggerServerEvent("sentinel:server:dispatch:setDuty", true, PlayerData.Unit)
     ClearPlayerWantedLevel(PlayerId())
     SetPlayerWantedLevel(PlayerId(), 0, false)
     SetPlayerWantedLevelNow(PlayerId(), false)
@@ -118,6 +119,7 @@ local function stopDuty()
     PlayerData.OnDuty = false
     PlayerData.DispatchState = "OFF_DUTY"
     PlayerData.Unit = nil
+    TriggerServerEvent("sentinel:server:dispatch:setDuty", false)
 
     Sentinel.Notify(
         "CENTRAL",

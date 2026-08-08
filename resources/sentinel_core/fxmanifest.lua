@@ -5,7 +5,12 @@ author 'Alejacros'
 description 'Sentinel AI Police Career Simulator'
 version '0.3.0-prealpha'
 
-shared_script 'shared/version.lua'
+shared_scripts {
+    'shared/version.lua',
+    'shared/career.lua',
+    'client/data/DispatchConfig.lua',
+    'client/data/Dispatches.lua'
+}
 
 ui_page 'html/index.html'
 
@@ -19,8 +24,6 @@ files {
 client_scripts {
     'config.lua',
 
-    'client/data/Dispatches.lua',
-    'client/data/DispatchConfig.lua',
     'client/data/Scenarios.lua',
     'client/data/BehaviorProfiles.lua',
     'client/data/IncidentTemplates.lua',
@@ -90,7 +93,8 @@ client_scripts {
 
 server_scripts {
     'server.lua',
-    'server/save.lua'
+    'server/save.lua',
+    'server/dispatch.lua'
 }
 
 dependencies {
