@@ -13,6 +13,79 @@ local scenePrepared = false
 local sceneSpawned = false
 local currentDispatchAlertId = nil
 
+local function ensureFoundation(dispatch)
+    if type(dispatch) ~= "table" then
+        return false
+    end
+
+    local incident = dispatch.incidentId
+        and IncidentManager.GetSnapshot(dispatch.incidentId)
+        or nil
+    local assignment = dispatch.assignmentId
+        and AssignmentManager.GetSnapshot(dispatch.assignmentId)
+        or nil
+
+    if incident and assignment then
+        return true
+    end
+
+    incident = IncidentManager.Create({
+        type = dispatch.type,
+        category = dispatch.type,
+        priority = dispatch.priority or "NORMAL",
+        location = dispatch.location,
+        source = "LEGACY_DISPATCH",
+        metadata = {
+            code = dispatch.code,
+            title = dispatch.title,
+            locationIndex = dispatch.locationIndex
+        }
+    })
+
+    if not incident then
+        return false
+    end
+
+    assignment = AssignmentManager.Create(incident.id, {
+        agency = "POLICE",
+        role = "PRIMARY_RESPONSE",
+        priority = incident.priority,
+        metadata = {legacyDispatch = true}
+    })
+
+    if not assignment then
+        IncidentManager.Cancel(incident.id)
+        return false
+    end
+
+    dispatch.incidentId = incident.id
+    dispatch.assignmentId = assignment.id
+    return true
+end
+
+local function cancelFoundation(dispatch)
+    if type(dispatch) ~= "table" then
+        return
+    end
+
+    local assignment = dispatch.assignmentId
+        and AssignmentManager.GetSnapshot(dispatch.assignmentId)
+        or nil
+    if assignment and (assignment.status == "PENDING"
+        or assignment.status == "ASSIGNED"
+        or assignment.status == "ACTIVE") then
+        AssignmentManager.Cancel(assignment.id)
+    end
+
+    local incident = dispatch.incidentId
+        and IncidentManager.GetSnapshot(dispatch.incidentId)
+        or nil
+    if incident and (incident.status == "NEW"
+        or incident.status == "ACTIVE") then
+        IncidentManager.Cancel(incident.id)
+    end
+end
+
 -- =========================================================
 -- LIMPIEZA DEL DESPACHO
 -- =========================================================
@@ -56,6 +129,7 @@ local function resetDispatch()
     resetSceneRuntime()
 
     if PlayerData then
+        cancelFoundation(PlayerData.CurrentDispatch)
         PlayerData.CurrentDispatch = nil
     end
 
@@ -180,6 +254,17 @@ local function sendRandomDispatch()
 
     resetSceneRuntime()
 
+    if not ensureFoundation(selectedDispatch) then
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible registrar el incidente operativo.",
+            {255, 80, 80}
+        )
+        PlayerData.DispatchState = "WAITING"
+        nextDispatchAt = GetGameTimer() + dispatchDelay
+        return false
+    end
+
     PlayerData.CurrentDispatch =
         selectedDispatch
 
@@ -215,7 +300,9 @@ local function sendRandomDispatch()
             metadata = {
                 code = selectedDispatch.code,
                 title = selectedDispatch.title,
-                location = selectedDispatch.location
+                location = selectedDispatch.location,
+                incidentId = selectedDispatch.incidentId,
+                assignmentId = selectedDispatch.assignmentId
             }
         })
     end
@@ -382,6 +469,15 @@ local function acceptDispatch()
 
     cleanupStaleMission(incident)
 
+    if not ensureFoundation(incident) then
+        Sentinel.Notify(
+            "ERROR",
+            "No fue posible asociar el incidente operativo.",
+            {255, 80, 80}
+        )
+        return false
+    end
+
     if type(CreateCurrentCase) ~= "function" then
         Sentinel.Notify(
             "ERROR",
@@ -402,10 +498,20 @@ local function acceptDispatch()
         return false
     end
 
+    local unit = AssignmentManager.BuildPlayerUnit()
+    if unit then
+        AssignmentManager.AssignUnit(incident.assignmentId, unit)
+    end
+    AssignmentManager.Activate(incident.assignmentId)
+    IncidentManager.UpdateStatus(incident.incidentId, "ACTIVE")
+
     if MissionManager
         and type(MissionManager.StartMission) == "function" then
 
-        MissionManager.StartMission()
+        MissionManager.StartMission({
+            incidentId = incident.incidentId,
+            assignmentId = incident.assignmentId
+        })
     end
 
     PlayerData.CurrentDispatch = incident
@@ -481,6 +587,8 @@ function DispatchManager.GetSnapshot()
         code = dispatch and dispatch.code or nil,
         title = dispatch and dispatch.title or nil,
         type = dispatch and dispatch.type or nil,
+        incidentId = dispatch and dispatch.incidentId or nil,
+        assignmentId = dispatch and dispatch.assignmentId or nil,
         location = dispatch and dispatch.location and {
             x = dispatch.location.x,
             y = dispatch.location.y,
@@ -503,6 +611,14 @@ function CompleteCurrentDispatch()
         return false
     end
 
+    local dispatch = PlayerData.CurrentDispatch
+    if dispatch and dispatch.assignmentId then
+        AssignmentManager.Complete(dispatch.assignmentId)
+    end
+    if dispatch and dispatch.incidentId then
+        IncidentManager.Resolve(dispatch.incidentId)
+    end
+
     resetDispatch()
 
     if PlayerData.OnDuty then
@@ -523,6 +639,8 @@ function CompleteCurrentDispatch()
     if MissionManager then
         MissionManager.Active = false
         MissionManager.StartedAt = 0
+        MissionManager.IncidentId = nil
+        MissionManager.AssignmentId = nil
     end
 
     return true

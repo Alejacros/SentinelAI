@@ -5,7 +5,9 @@ MissionManager = {
     Cleaning = false,
     MissionId = 0,
     StartedAt = 0,
-    LastEndReason = nil
+    LastEndReason = nil,
+    IncidentId = nil,
+    AssignmentId = nil
 }
 
 local function notify(message, color)
@@ -228,7 +230,7 @@ local function cleanupManagers(reason)
     removeDispatchBlip()
 end
 
-function MissionManager.StartMission()
+function MissionManager.StartMission(context)
     if MissionManager.Cleaning then
         return false
     end
@@ -248,6 +250,12 @@ function MissionManager.StartMission()
         GetGameTimer()
 
     MissionManager.LastEndReason = nil
+    context = type(context) == "table" and context or {}
+    local dispatch = PlayerData and PlayerData.CurrentDispatch or {}
+    MissionManager.IncidentId = context.incidentId
+        or dispatch.incidentId
+    MissionManager.AssignmentId = context.assignmentId
+        or dispatch.assignmentId
 
     print(
         ("[MissionManager] Misión #%d iniciada.")
@@ -279,6 +287,25 @@ function MissionManager.EndMission(
 
     cleanupManagers(reason)
 
+    if not preserveDispatchState then
+        local assignment = MissionManager.AssignmentId
+            and AssignmentManager.GetSnapshot(MissionManager.AssignmentId)
+            or nil
+        if assignment and (assignment.status == "PENDING"
+            or assignment.status == "ASSIGNED"
+            or assignment.status == "ACTIVE") then
+            AssignmentManager.Cancel(assignment.id)
+        end
+
+        local incident = MissionManager.IncidentId
+            and IncidentManager.GetSnapshot(MissionManager.IncidentId)
+            or nil
+        if incident and (incident.status == "NEW"
+            or incident.status == "ACTIVE") then
+            IncidentManager.Cancel(incident.id)
+        end
+    end
+
     if type(CancelCurrentCase)
         == "function" then
 
@@ -301,6 +328,8 @@ function MissionManager.EndMission(
     MissionManager.Active = false
     MissionManager.StartedAt = 0
     MissionManager.LastEndReason = reason
+    MissionManager.IncidentId = nil
+    MissionManager.AssignmentId = nil
     MissionManager.Cleaning = false
 
     print(
@@ -342,6 +371,8 @@ function MissionManager.GetStatus()
         active = MissionManager.Active,
         cleaning = MissionManager.Cleaning,
         missionId = MissionManager.MissionId,
+        incidentId = MissionManager.IncidentId,
+        assignmentId = MissionManager.AssignmentId,
 
         elapsedSeconds =
             MissionManager.Active

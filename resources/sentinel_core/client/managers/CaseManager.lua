@@ -51,6 +51,8 @@ function CreateCurrentCase(dispatch)
         id = SentinelCase.NextId,
         code = dispatch.code or "000",
         title = dispatch.title or "Incidente sin identificar",
+        incidentId = dispatch.incidentId,
+        assignmentId = dispatch.assignmentId,
         state = "ACTIVE",
 
         witness = nil,

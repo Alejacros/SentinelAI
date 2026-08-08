@@ -23,6 +23,7 @@ client_scripts {
     'client/data/Scenarios.lua',
     'client/data/BehaviorProfiles.lua',
     'client/data/IncidentTemplates.lua',
+    'client/data/Agencies.lua',
     'client/data/PatrolMessages.lua',
     'client/data/PoliceUniforms.lua',
     'client/data/PoliceFleet.lua',
@@ -43,6 +44,8 @@ client_scripts {
     'client/managers/PermissionManager.lua',
     'client/managers/PoliceAlertManager.lua',
     'client/managers/WidgetLayoutManager.lua',
+    'client/managers/IncidentManager.lua',
+    'client/managers/AssignmentManager.lua',
 
     'client/managers/HistoryManager.lua',
     'client/managers/CaseManager.lua',
