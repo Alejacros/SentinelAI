@@ -2,6 +2,12 @@ Dispatches = {
     {
         code = "211",
         type = "ROBBERY",
+        priority = "HIGH",
+        agency = "POLICE",
+        operationalTier = "T2_INTERMEDIATE",
+        minimumRank = "Cabo",
+        recommendedRank = "Sargento",
+        requiredCertifications = {},
         title = "Robo en progreso",
 
         locations = {
@@ -16,6 +22,12 @@ Dispatches = {
     {
         code = "415",
         type = "DISTURBANCE",
+        priority = "NORMAL",
+        agency = "POLICE",
+        operationalTier = "T1_BASIC",
+        minimumRank = "Cadete",
+        recommendedRank = "Oficial",
+        requiredCertifications = {},
         title = "Disturbio",
 
         locations = {
@@ -30,6 +42,12 @@ Dispatches = {
     {
         code = "901",
         type = "TRAFFIC_ACCIDENT",
+        priority = "NORMAL",
+        agency = "POLICE",
+        operationalTier = "T1_BASIC",
+        minimumRank = "Cadete",
+        recommendedRank = "Oficial",
+        requiredCertifications = {},
         title = "Accidente de tránsito",
 
         locations = {

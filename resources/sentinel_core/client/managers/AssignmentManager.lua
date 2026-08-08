@@ -1,7 +1,7 @@
 AssignmentManager = AssignmentManager or {}
 
--- T4A mantiene autoridad local. Create/AssignUnit/Activate/Complete/Cancel y
--- la generación de IDs deberán ejecutarse en servidor al habilitar multiplayer.
+-- T4B mantiene autoridad local. Create/AssignUnit y todas las transiciones,
+-- incluida la generación de IDs, deberán ejecutarse en servidor en T4C.
 
 local assignments = {}
 local sequence = 0
@@ -9,6 +9,8 @@ local validStatuses = {
     PENDING = true,
     ASSIGNED = true,
     ACTIVE = true,
+    DECLINED = true,
+    EXPIRED = true,
     COMPLETED = true,
     CANCELLED = true
 }
@@ -62,6 +64,11 @@ function AssignmentManager.Create(incidentId, data)
         agency = agency,
         role = tostring(data.role or "PRIMARY_RESPONSE"),
         priority = tostring(data.priority or incident.priority or "NORMAL"),
+        operationalTier = tostring(data.operationalTier or "T1_BASIC"),
+        minimumRank = tostring(data.minimumRank or "Cadete"),
+        recommendedRank = data.recommendedRank
+            and tostring(data.recommendedRank) or nil,
+        requiredCertifications = copy(data.requiredCertifications or {}),
         status = "PENDING",
         assignedUnit = nil,
         createdAt = now,
@@ -124,6 +131,14 @@ end
 
 function AssignmentManager.Complete(id)
     return updateStatus(assignments[id], "COMPLETED")
+end
+
+function AssignmentManager.Decline(id)
+    return updateStatus(assignments[id], "DECLINED")
+end
+
+function AssignmentManager.Expire(id)
+    return updateStatus(assignments[id], "EXPIRED")
 end
 
 function AssignmentManager.Cancel(id)

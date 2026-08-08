@@ -351,13 +351,26 @@ function PoliceTerminalManager.ExecuteAction(actionId, payload)
     if actionId == "vehicle.locate" then
         return VehicleManager.LocatePoliceVehicle()
     elseif actionId == "dispatch.accept" then
-        if DispatchManager and DispatchManager.AcceptCurrent then
-            return DispatchManager.AcceptCurrent()
+        if DispatchManager and DispatchManager.Accept then
+            if not payload.assignmentId then
+                return false, "INVALID_ASSIGNMENT"
+            end
+            local ok, reason = DispatchManager.Accept(
+                payload.assignmentId,
+                {source = "MANUAL"}
+            )
+            if ok then PoliceTerminalManager.RefreshDomain("dispatch") end
+            return ok, reason
         end
 
         return false, "UNAVAILABLE"
     elseif actionId == "dispatch.decline" then
-        return false, "NOT_IMPLEMENTED"
+        if DispatchManager and DispatchManager.Decline then
+            local ok, reason = DispatchManager.Decline(payload.assignmentId)
+            if ok then PoliceTerminalManager.RefreshDomain("dispatch") end
+            return ok, reason
+        end
+        return false, "UNAVAILABLE"
     elseif actionId == "duty.start" then
         if not MenuManager or not MenuManager.StartDuty then
             return false, "UNAVAILABLE"

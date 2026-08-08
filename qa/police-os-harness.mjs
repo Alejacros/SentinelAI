@@ -17,7 +17,9 @@ const page = pathToFileURL(resolve("resources/sentinel_core/html/index.html")).h
 const resolutions = [[1920, 1080], [1600, 900], [1366, 768]];
 const scenarios = [
     {id: "pda", mode: "PDA"},
+    {id: "pda-cad", mode: "PDA", cad: true},
     {id: "vehicle-full", mode: "VEHICLE_FULL"},
+    {id: "vehicle-full-cad", mode: "VEHICLE_FULL", cad: true},
     {id: "driver-empty", mode: "DRIVER_SAFE"},
     {id: "driver-dispatch", mode: "DRIVER_SAFE", dispatch: true},
     {id: "driver-high", mode: "DRIVER_SAFE", dispatch: true, alert: "HIGH"},
@@ -60,21 +62,29 @@ function makeSnapshot(scenario) {
         HintWidget: {anchor: "BOTTOM_RIGHT", x: 98, y: 95, scale: 1, visible: true}
     };
     const alert = scenario.alert ? {id: "qa", type: "DISPATCH", source: "CENTRAL", title: "211 — Robo en progreso", message: "Strawberry", priority: scenario.alert} : null;
+    const cadCalls = scenario.cad ? [
+        {incidentId: "INC-QA-1", assignmentId: "ASN-QA-1", agency: "POLICE", priority: "EMERGENCY", operationalTier: "T3_HIGH_RISK", minimumRank: "Subteniente", code: "211", title: "Ataque armado", distance: 420, remainingMs: 52000, status: "PENDING", eligible: false, rankEligible: false, eligibilityReason: "RANK_REQUIRED"},
+        {incidentId: "INC-QA-2", assignmentId: "ASN-QA-2", agency: "POLICE", priority: "NORMAL", operationalTier: "T1_BASIC", minimumRank: "Cadete", code: "415", title: "Disturbio", distance: 680, remainingMs: 71000, status: "PENDING", eligible: true, rankEligible: true}
+    ] : [];
     return {
-        mode: scenario.mode, activeModule: "HOME",
-        modules: [{id: "HOME", label: "Inicio", implemented: true, allowed: true, visible: true}],
+        mode: scenario.mode, activeModule: scenario.cad ? "CAD" : "HOME",
+        modules: [
+            {id: "HOME", label: "Inicio", implemented: true, allowed: true, visible: true},
+            {id: "CAD", label: "Despachos", implemented: true, allowed: true, visible: true}
+        ],
         widgetLayout: {
             uiScale: 1,
             preset: "TACTICAL",
             layout,
             widgets: full || scenario.layer === "KVP" ? widgets : {},
-            nativeHud: {width: 0.165, fullHeight: 0.122, minimalHeight: 0.066}
+            nativeHud: {width: 0.165, fullHeight: 0.122, minimalHeight: 0.072}
         },
         context: {type: scenario.mode === "PDA" ? "ON_FOOT" : "VEHICLE_DRIVER", speedKmh: scenario.mode === "DRIVER_SAFE" ? 68 : 0, fullModeAvailable: false},
         officer: {name: "Oficial QA", rank: "Cadete", effectiveRank: "Cadete", xp: 120, nextRankXP: 500, nextRank: "Oficial", completedCases: 2},
         duty: {onDuty: true, callsign: "VICTOR-82", dispatchState: scenario.dispatch ? "PENDING" : "WAITING"},
         vehicle: {assigned: true, label: "Patrulla estándar", state: "ACTIVE", engineHealth: 900, bodyHealth: 950, transportCapacity: 2},
-        dispatch: scenario.dispatch ? {lifecycle: "PENDING", code: "211", title: "Robo en progreso", distance: 400, canAccept: true} : {lifecycle: "NONE"},
+        dispatch: scenario.cad ? {lifecycle: "PENDING", code: "211", title: "Ataque armado", distance: 420, canAccept: false, calls: cadCalls, recentCalls: [], history: []}
+            : scenario.dispatch ? {lifecycle: "PENDING", code: "211", title: "Robo en progreso", distance: 400, canAccept: true} : {lifecycle: "NONE"},
         cases: {history: []}, alerts: alert ? [alert] : [], activeAlert: alert,
         qaEditor: scenario.layer === "EDITOR" ? {
             preferences: {
@@ -210,6 +220,9 @@ for (const [width, height] of resolutions) {
         // Los proxies editables pueden coexistir temporalmente durante drag/resize.
         if (scenario.layer !== "EDITOR" && result.overlaps.length) failures.push(`overlap: ${result.overlaps.join(",")}`);
         if (result.docks.some((dock) => dock.color !== "rgba(0, 0, 0, 0)" || dock.image !== "none")) failures.push("dock no transparente");
+        if (scenario.cad && result.cad.count !== 2) failures.push(`CAD entries ${result.cad.count}/2`);
+        if (scenario.cad && result.cad.unauthorized !== 1) failures.push(`CAD unauthorized ${result.cad.unauthorized}/1`);
+        if (scenario.cad && result.cad.enabledAccept !== 1) failures.push(`CAD accepts ${result.cad.enabledAccept}/1`);
         Object.entries(result.widgets).forEach(([id, widget]) => {
             if (id !== "TerminalWidget" && widget.shown && widget.width > 450) failures.push(`${id}: ancho superior a 450px`);
             if (!widget.shown || !widget.parent) return;

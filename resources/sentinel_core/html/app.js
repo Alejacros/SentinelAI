@@ -37,6 +37,7 @@ const diagnosedDomModes = new Set();
 const resolvedWidgetDiagnostics = new Set();
 
 const moduleDescriptions = {
+    CAD: "Assignments operativos disponibles y actividad reciente.",
     PEOPLE: "Consulta ciudadana básica preparada para una fase posterior.",
     VEHICLES: "Consulta de matrículas y vehículos próximamente.",
     EVIDENCE: "Cadena de custodia y evidencias del expediente.",
@@ -404,7 +405,7 @@ function renderHome(snapshot) {
     const vehicle = snapshot.vehicle || {};
     const alert = snapshot.activeAlert || (snapshot.alerts || [])[0];
     const alertActions = (alert?.actions || []).map((action) =>
-        `<button data-terminal-action="${escapeHtml(action.id)}" ${action.available ? "" : "disabled"}>${escapeHtml(action.label)}</button>`
+        `<button data-terminal-action="${escapeHtml(action.id)}" data-assignment-id="${escapeHtml(action.assignmentId || alert?.metadata?.assignmentId || "")}" ${action.available ? "" : "disabled"}>${escapeHtml(action.label)}</button>`
     ).join("");
     const dutyAction = duty.onDuty ? "duty.stop" : "duty.start";
     const dutyLabel = duty.onDuty ? "FINALIZAR TURNO" : "INICIAR TURNO";
@@ -546,6 +547,7 @@ function renderDispatchWidget() {
         ${inactive ? "" : `
         <dl><div><dt>CÓDIGO</dt><dd>${escapeHtml(dispatch.code || "—")}</dd></div>
         <div><dt>DISTANCIA</dt><dd>${dispatch.distance ? `${Math.round(dispatch.distance)} m` : "—"}</dd></div></dl>
+        ${inactive ? "" : `<small>${escapeHtml(dispatch.operationalTier || "T1_BASIC")} · ${escapeHtml(dispatch.priority || "NORMAL")}</small>`}
         ${dispatch.canAccept ? '<small>Y · ACEPTAR</small>' : ""}`}`;
 }
 
@@ -601,11 +603,33 @@ function renderGeneric(moduleId, snapshot) {
             <button data-terminal-action="vehicle.locate" ${vehicle.assigned ? "" : "disabled"}>Localizar unidad</button>`;
     } else if (moduleId === "CAD") {
         const dispatch = snapshot.dispatch || {};
-        placeholder.innerHTML += `<div class="unit-details"><strong>${escapeHtml(dispatch.title || "Sin llamada activa")}</strong>
-            <span>Código: ${escapeHtml(dispatch.code || "—")}</span><span>Estado: ${escapeHtml(dispatch.lifecycle || "NONE")}</span>
-            <span>Distancia: ${dispatch.distance ? `${Math.round(dispatch.distance)} m` : "—"}</span></div>
-            <button data-terminal-action="dispatch.accept" ${dispatch.canAccept ? "" : "disabled"}>Aceptar llamada</button>
-            <button disabled title="Disponible en Dispatch 2.0">Rechazar llamada</button>`;
+        const calls = Array.isArray(dispatch.calls) ? dispatch.calls : [];
+        const recentCalls = Array.isArray(dispatch.recentCalls)
+            ? dispatch.recentCalls.filter((call) => call.status !== "PENDING").slice(0, 6)
+            : [];
+        const cadHistory = Array.isArray(dispatch.history) ? dispatch.history.slice(-8).reverse() : [];
+        placeholder.innerHTML += `<div class="cad-assignment-list">${calls.length ? calls.map((call) => {
+            const remaining = Math.max(0, Math.ceil((Number(call.remainingMs) || 0) / 1000));
+            const authorization = call.rankEligible ? "AUTORIZADO" : "NO AUTORIZADO";
+            const reason = call.eligibilityReason === "RANK_REQUIRED"
+                ? `Requiere ${escapeHtml(call.minimumRank || "rango superior")}`
+                : call.eligibilityReason === "MISSION_ACTIVE"
+                ? "Misión principal activa"
+                : escapeHtml(call.eligibilityReason || "");
+            return `<article class="cad-assignment priority-${escapeHtml(String(call.priority || "NORMAL").toLowerCase())}">
+                <header><strong>${escapeHtml(call.code || "—")} · ${escapeHtml(call.title || "Incidente")}</strong><b>${escapeHtml(call.priority || "NORMAL")}</b></header>
+                <div><span>${escapeHtml(call.operationalTier || "T1_BASIC")}</span><span>${call.distance ? `${Math.round(call.distance)} m` : "—"}</span><span>${remaining}s</span></div>
+                <small>${authorization}${reason ? ` · ${reason}` : ""}</small>
+                <footer><button data-terminal-action="dispatch.accept" data-assignment-id="${escapeHtml(call.assignmentId)}" ${call.eligible ? "" : "disabled"}>Aceptar</button>
+                <button data-terminal-action="dispatch.decline" data-assignment-id="${escapeHtml(call.assignmentId)}">Rechazar</button></footer>
+            </article>`;
+        }).join("") : "<p>Sin assignments pendientes.</p>"}</div>
+        <div class="cad-runtime-history"><strong>ASSIGNMENTS RECIENTES</strong>${recentCalls.length
+            ? recentCalls.map((call) => `<small>${escapeHtml(call.status || "UPDATE")} · ${escapeHtml(call.code || "—")} · ${escapeHtml(call.title || "Incidente")}</small>`).join("")
+            : "<small>Sin assignments cerrados o activos.</small>"}</div>
+        <div class="cad-runtime-history"><strong>ACTIVIDAD RECIENTE</strong>${cadHistory.length
+            ? cadHistory.map((entry) => `<small>${escapeHtml(entry.event || "UPDATE")} · ${escapeHtml(entry.assignmentId || "—")}</small>`).join("")
+            : "<small>Sin actividad registrada.</small>"}</div>`;
     } else if (moduleId === "MAP") {
         const vehicle = snapshot.vehicle || {};
         placeholder.innerHTML += `<button data-terminal-action="vehicle.locate" ${vehicle.assigned ? "" : "disabled"}>Marcar unidad en GPS</button>`;
@@ -681,7 +705,10 @@ function diagnoseTerminalDom() {
 function bindTerminalActions() {
     document.querySelectorAll("[data-terminal-action]").forEach((button) => {
         button.onclick = async () => {
-            const response = await postNui("terminal:action", {actionId: button.dataset.terminalAction});
+            const response = await postNui("terminal:action", {
+                actionId: button.dataset.terminalAction,
+                payload: {assignmentId: button.dataset.assignmentId || null}
+            });
             const result = await response.json();
             if (!result.ok) button.dataset.error = result.error || "No disponible";
         };
@@ -740,7 +767,14 @@ function mergeTerminalUpdate(domain, data) {
         terminalState.snapshot[domain] = data;
 
         if (domain === "vehicle") renderUnitWidget();
-        if (domain === "dispatch") renderDispatchWidget();
+        if (domain === "dispatch") {
+            renderDispatchWidget();
+            if (terminalState.activeModule === "CAD"
+                && terminalState.mode !== "DRIVER_SAFE") {
+                renderGeneric("CAD", terminalState.snapshot);
+                bindTerminalActions();
+            }
+        }
         if (domain === "cases") renderHistory(data.history || []);
         renderDashboardIfChanged();
         return;
@@ -1355,7 +1389,19 @@ function runPoliceOsQaPreview() {
                 const style = getComputedStyle(element);
                 return {name: element.className, color: style.backgroundColor, image: style.backgroundImage};
             });
-            const result = {mode: terminalState.mode, widgets, overlaps, outside, docks};
+            const cadCards = [...document.querySelectorAll(".cad-assignment")];
+            const result = {
+                mode: terminalState.mode,
+                widgets,
+                overlaps,
+                outside,
+                docks,
+                cad: {
+                    count: cadCards.length,
+                    unauthorized: cadCards.filter((card) => card.textContent.includes("NO AUTORIZADO")).length,
+                    enabledAccept: cadCards.filter((card) => !card.querySelector('[data-terminal-action="dispatch.accept"]')?.disabled).length
+                }
+            };
             const output = document.createElement("pre");
             output.id = "police-os-qa-result";
             output.hidden = true;

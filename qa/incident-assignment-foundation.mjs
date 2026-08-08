@@ -79,8 +79,7 @@ assert.equal(multiAssignments.filter((item) => item.agency === "POLICE").length,
 const dispatchSource = readFileSync("resources/sentinel_core/client/managers/DispatchManager.lua", "utf8");
 const missionSource = readFileSync("resources/sentinel_core/client/managers/MissionManager.lua", "utf8");
 const caseSource = readFileSync("resources/sentinel_core/client/managers/CaseManager.lua", "utf8");
-assert.match(dispatchSource, /dispatch\.incidentId = incident\.id/);
-assert.match(dispatchSource, /dispatch\.assignmentId = assignment\.id/);
+assert.match(dispatchSource, /dispatch\.incidentId, dispatch\.assignmentId = incident\.id, assignment\.id/);
 assert.match(dispatchSource, /MissionManager\.StartMission\(\{/);
 assert.match(missionSource, /MissionManager\.IncidentId = context\.incidentId/);
 assert.match(missionSource, /MissionManager\.AssignmentId = context\.assignmentId/);

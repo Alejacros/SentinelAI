@@ -2293,3 +2293,43 @@ button {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+.cad-assignment-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.7rem;
+}
+
+.cad-assignment {
+    padding: 0.65rem;
+    border: 1px solid var(--os-line);
+    border-left: 2px solid var(--sentinel-cyan);
+    border-radius: 0.35rem;
+    background: rgba(10, 15, 22, 0.72);
+}
+
+.cad-assignment.priority-high { border-left-color: var(--sentinel-amber); }
+.cad-assignment.priority-emergency { border-left-color: var(--sentinel-red); }
+
+.cad-assignment header,
+.cad-assignment > div,
+.cad-assignment footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.cad-assignment > div,
+.cad-assignment > small,
+.cad-assignment footer {
+    margin-top: 0.45rem;
+}
+
+.cad-runtime-history {
+    display: grid;
+    gap: 0.3rem;
+    margin-top: 0.8rem;
+    color: var(--sentinel-muted);
+}

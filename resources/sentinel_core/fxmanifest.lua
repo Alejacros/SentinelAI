@@ -20,6 +20,7 @@ client_scripts {
     'config.lua',
 
     'client/data/Dispatches.lua',
+    'client/data/DispatchConfig.lua',
     'client/data/Scenarios.lua',
     'client/data/BehaviorProfiles.lua',
     'client/data/IncidentTemplates.lua',
