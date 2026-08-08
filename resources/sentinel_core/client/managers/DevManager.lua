@@ -870,6 +870,30 @@ RegisterCommand("devstate", function()
         and PlayerData.Character.appearance
         and PlayerData.Character.appearance.bodyModel
         or GetEntityModel(ped)
+    local currentPedVehicle = GetVehiclePedIsIn(ped, false)
+    local isAssignedVehicle = vehicleExists
+        and currentPedVehicle == vehicle
+        or false
+    local seatIndex = nil
+
+    if currentPedVehicle and currentPedVehicle ~= 0 then
+        if GetPedInVehicleSeat(currentPedVehicle, -1) == ped then
+            seatIndex = -1
+        else
+            for seat = 0, GetVehicleMaxNumberOfPassengers(currentPedVehicle) - 1 do
+                if GetPedInVehicleSeat(currentPedVehicle, seat) == ped then
+                    seatIndex = seat
+                    break
+                end
+            end
+        end
+    end
+
+    local terminalContext = PoliceTerminalManager.GetContext()
+    local widgetPreset = WidgetLayoutManager
+        and WidgetLayoutManager.Preferences
+        and WidgetLayoutManager.Preferences.preset
+        or "N/A"
 
     print("====================================")
     print("[Sentinel AI] DEV STATE")
@@ -895,6 +919,28 @@ RegisterCommand("devstate", function()
         tostring(vehicle),
         tostring(vehicleExists)
     ))
+    print(("CurrentPedVehicle: %s"):format(tostring(currentPedVehicle)))
+    print(("PlayerData.Vehicle: %s"):format(tostring(vehicle)))
+    print(("DevManager.TestVehicle: %s"):format(
+        tostring(DevManager.TestVehicle)
+    ))
+    print(("isAssignedVehicle: %s"):format(tostring(isAssignedVehicle)))
+    print(("Seat index: %s"):format(tostring(seatIndex)))
+    print(("Vehicle speed: %.1f km/h"):format(
+        currentPedVehicle ~= 0
+            and GetEntitySpeed(currentPedVehicle) * 3.6
+            or 0.0
+    ))
+    print(("PoliceTerminal context: %s"):format(
+        tostring(terminalContext.type)
+    ))
+    print(("PoliceTerminal mode: %s"):format(
+        tostring(PoliceTerminalManager.GetMode())
+    ))
+    print(("PoliceTerminal open: %s"):format(
+        tostring(PoliceTerminalManager.IsOpen())
+    ))
+    print(("Widget layout preset: %s"):format(tostring(widgetPreset)))
     print(("Distance to vehicle: %s"):format(
         distanceToVehicle
             and ("%.2f m"):format(distanceToVehicle)

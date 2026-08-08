@@ -73,7 +73,14 @@ function MDTManager.Close()
 end
 
 RegisterCommand("sentinel_tablet", function()
-    PoliceTerminalManager.Toggle()
+    if IsControlPressed(0, 21) then
+        WidgetLayoutManager.ToggleEditor()
+        return
+    end
+
+    if not WidgetLayoutManager.IsEditing() then
+        PoliceTerminalManager.Toggle()
+    end
 end, false)
 
 RegisterKeyMapping(

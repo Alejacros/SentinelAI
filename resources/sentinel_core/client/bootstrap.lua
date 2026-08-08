@@ -28,7 +28,7 @@ CreateThread(function()
 
     Sentinel.Notify(
         Sentinel.Name,
-        "Sistema listo. Pulsa F1 para abrir Sentinel."
+        "Sistema listo. Pulsa F7 para abrir Sentinel Police OS."
     )
 end)
 

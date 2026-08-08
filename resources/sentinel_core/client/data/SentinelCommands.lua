@@ -22,6 +22,8 @@ SentinelCommands = {
     {command = "devhelp", description = "Muestra las herramientas DEV.", category = "DESARROLLO", devOnly = true},
     {command = "devrank", usage = "<alias|reset>", description = "Cambia el rango efectivo temporal.", category = "DESARROLLO", devOnly = true},
     {command = "devstate", description = "Imprime el estado runtime de Sentinel.", category = "DESARROLLO", devOnly = true},
+    {command = "devuireset", description = "Restaura el layout de Police OS sin tocar perfiles.", category = "DESARROLLO", devOnly = true},
+    {command = "devnativehud", description = "Activa o desactiva temporalmente el HUD nativo DrawRect.", category = "DESARROLLO", devOnly = true},
     {command = "devtp", description = "Teletransporta al waypoint.", category = "DESARROLLO", devOnly = true},
     {command = "devgarage", usage = "<mission|central|sandy|paleto>", description = "Teletransporta a un garaje.", category = "DESARROLLO", devOnly = true},
     {command = "devnoclip", description = "Activa o desactiva noclip.", category = "DESARROLLO", devOnly = true},

@@ -42,6 +42,7 @@ client_scripts {
     'client/managers/CareerManager.lua',
     'client/managers/PermissionManager.lua',
     'client/managers/PoliceAlertManager.lua',
+    'client/managers/WidgetLayoutManager.lua',
 
     'client/managers/HistoryManager.lua',
     'client/managers/CaseManager.lua',

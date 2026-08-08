@@ -1,17 +1,3 @@
-local menuVisible = false
-local onDuty = false
-
-local function drawText(text, x, y, scale)
-    SetTextFont(4)
-    SetTextScale(scale, scale)
-    SetTextColour(255, 255, 255, 255)
-    SetTextCentre(true)
-
-    BeginTextCommandDisplayText("STRING")
-    AddTextComponentSubstringPlayerName(text)
-    EndTextCommandDisplayText(x, y)
-end
-
 CreateThread(function()
     Wait(3000)
 
@@ -19,57 +5,7 @@ CreateThread(function()
         color = {0, 170, 255},
         args = {
             "Sentinel AI",
-            "Bienvenida. Pulsa F1 para abrir Sentinel."
+            "Bienvenida. Pulsa F7 para abrir Sentinel Police OS."
         }
     })
-
-    while true do
-        Wait(0)
-
-        if IsControlJustPressed(0, 288) then -- F1
-            menuVisible = not menuVisible
-        end
-
-        if menuVisible then
-            DrawRect(0.5, 0.35, 0.30, 0.28, 0, 0, 0, 190)
-
-            drawText("SENTINEL AI", 0.5, 0.245, 0.55)
-
-            if onDuty then
-                drawText("ESTADO: EN SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Finalizar turno", 0.5, 0.375, 0.34)
-            else
-                drawText("ESTADO: FUERA DE SERVICIO", 0.5, 0.315, 0.38)
-                drawText("[E] Iniciar turno", 0.5, 0.375, 0.34)
-            end
-
-            drawText("[ESC] Cerrar", 0.5, 0.425, 0.30)
-
-            if IsControlJustPressed(0, 38) then -- E
-                onDuty = not onDuty
-
-                if onDuty then
-                    TriggerEvent("chat:addMessage", {
-                        color = {0, 255, 120},
-                        args = {
-                            "Sentinel AI",
-                            "Turno iniciado. Estás en servicio."
-                        }
-                    })
-                else
-                    TriggerEvent("chat:addMessage", {
-                        color = {255, 180, 0},
-                        args = {
-                            "Sentinel AI",
-                            "Turno finalizado. Estás fuera de servicio."
-                        }
-                    })
-                end
-            end
-
-            if IsControlJustPressed(0, 322) then -- ESC
-                menuVisible = false
-            end
-        end
-    end
 end)

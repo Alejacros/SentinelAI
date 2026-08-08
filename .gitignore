@@ -24,3 +24,8 @@ server/*
 
 # Sentinel AI persistent profiles
 resources/sentinel_core/data/profiles.json
+resources/sentinel_core/data/profiles.backup.json
+resources/sentinel_core/data/*.tmp
+resources/sentinel_core/client/data/profiles.json
+resources/sentinel_core/logs/
+resources/sentinel_core/runtime/

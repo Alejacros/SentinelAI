@@ -1,6 +1,7 @@
 local cachedAlert = nil
 local cachedDispatch = {}
 local cachedVehicle = {}
+local devNativeHudDisabled = false
 
 local DISPATCH_LABELS = {
     OFF_DUTY = "OFF DUTY",
@@ -73,19 +74,54 @@ local function shouldShow()
                 and PlayerData.DispatchState ~= "OFF_DUTY"))
 end
 
+local function resolveWidgetPosition(config, width, height)
+    local anchor = config and config.anchor or "TOP_RIGHT"
+    local x = (config and config.x or 98) / 100
+    local y = (config and config.y or 3) / 100
+
+    if anchor == "TOP" or anchor == "BOTTOM" then
+        x = x - width / 2
+    elseif anchor == "TOP_RIGHT"
+        or anchor == "RIGHT"
+        or anchor == "BOTTOM_RIGHT" then
+
+        x = x - width
+    end
+
+    if anchor == "LEFT" or anchor == "RIGHT" then
+        y = y - height / 2
+    elseif anchor == "BOTTOM_LEFT"
+        or anchor == "BOTTOM"
+        or anchor == "BOTTOM_RIGHT" then
+
+        y = y - height
+    end
+
+    return math.max(0.01, math.min(0.99 - width, x)),
+        math.max(0.01, math.min(0.99 - height, y))
+end
+
 local function drawPoliceHud()
     local safeMode = PoliceTerminalManager
         and PoliceTerminalManager.IsOpen()
         and PoliceTerminalManager.GetMode() == "DRIVER_SAFE"
     local hudLayout = WidgetLayout.NativeHUD.TOP_RIGHT
-    local uiScale = WidgetLayout.UIScale or 1.0
+    local mode = safeMode and "DRIVER_SAFE"
+        or (PoliceTerminalManager and PoliceTerminalManager.GetMode())
+        or "PDA"
+    local widgetConfig = WidgetLayoutManager.GetWidget(mode, "HUDWidget")
+
+    if not widgetConfig or widgetConfig.visible ~= true then
+        return
+    end
+
+    local uiScale = (WidgetLayout.UIScale or 1.0)
+        * (widgetConfig.scale or 1.0)
     local width = hudLayout.width * uiScale
-    local rightEdge = hudLayout.anchorX + hudLayout.width
-    local x = rightEdge - width
-    local y = hudLayout.anchorY
     local height = (safeMode
         and hudLayout.minimalHeight
         or hudLayout.fullHeight) * uiScale
+    local x, y = resolveWidgetPosition(widgetConfig, width, height)
     local xp, nextXP, progress, nextRank = getProgress()
     local dispatch = cachedDispatch
     local vehicle = cachedVehicle
@@ -94,7 +130,8 @@ local function drawPoliceHud()
     local status = DISPATCH_LABELS[PlayerData.DispatchState]
         or PlayerData.DispatchState or "OFF DUTY"
 
-    DrawRect(x + width / 2, y + height / 2, width, height, 5, 14, 24, 210)
+    DrawRect(x + width / 2, y + height / 2, width, height,
+        10, 15, 22, 210)
     DrawRect(x + 0.002, y + height / 2, 0.003, height, 67, 181, 241, 235)
 
     drawText("SENTINEL POLICE", x + 0.009, y + 0.006, 0.22, 91, 194, 255)
@@ -129,15 +166,19 @@ local function drawAlertCard(alert)
 
     local age = GetGameTimer() - (tonumber(alert.runtimeCreatedAt) or 0)
     local expanded = age < 7000
-    local hudLayout = WidgetLayout.NativeHUD.TOP_RIGHT
-    local uiScale = WidgetLayout.UIScale or 1.0
+    local mode = PoliceTerminalManager and PoliceTerminalManager.GetMode()
+        or "PDA"
+    local widgetConfig = WidgetLayoutManager.GetWidget(mode, "AlertWidget")
+
+    if not widgetConfig or widgetConfig.visible ~= true then
+        return
+    end
+
+    local uiScale = (WidgetLayout.UIScale or 1.0)
+        * (widgetConfig.scale or 1.0)
     local width = 0.21 * uiScale
-    local rightEdge = hudLayout.anchorX + hudLayout.width
-    local x = rightEdge - width
-    local y = hudLayout.anchorY
-        + hudLayout.fullHeight * uiScale
-        + 0.013
     local height = (expanded and 0.088 or 0.035) * uiScale
+    local x, y = resolveWidgetPosition(widgetConfig, width, height)
     local colors = {
         EMERGENCY = {231, 71, 71},
         HIGH = {229, 158, 62},
@@ -189,15 +230,16 @@ CreateThread(function()
     while true do
         local sleep = 500
 
-        if shouldShow() then
+        if shouldShow()
+            and not devNativeHudDisabled
+            and not WidgetLayoutManager.IsEditing() then
             sleep = 0
             drawPoliceHud()
 
-            local safeMode = PoliceTerminalManager
+            local terminalOpen = PoliceTerminalManager
                 and PoliceTerminalManager.IsOpen()
-                and PoliceTerminalManager.GetMode() == "DRIVER_SAFE"
 
-            if not safeMode then
+            if not terminalOpen then
                 drawAlertCard(cachedAlert)
             end
         end
@@ -205,3 +247,14 @@ CreateThread(function()
         Wait(sleep)
     end
 end)
+
+RegisterCommand("devnativehud", function()
+    if not Config or Config.DevMode ~= true then
+        return
+    end
+
+    devNativeHudDisabled = not devNativeHudDisabled
+    print(("[PoliceOS DEV] HUD nativo DrawRect: %s"):format(
+        devNativeHudDisabled and "DESACTIVADO" or "ACTIVADO"
+    ))
+end, false)

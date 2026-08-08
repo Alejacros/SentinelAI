@@ -6,7 +6,7 @@ CreateThread(function()
         color = {0,170,255},
         args = {
             "Sentinel AI",
-            "Bienvenida. Pulsa F1 para abrir Sentinel."
+            "Bienvenida. Pulsa F7 para abrir Sentinel Police OS."
         }
     })
 

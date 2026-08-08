@@ -9,6 +9,80 @@ PoliceTerminalManager = {
 local DRIVER_SAFE_SPEED = 10.0
 local DRIVER_FULL_SPEED = 5.0
 local DRIVER_STOPPED_DELAY = 1000
+local lastDiagnosticKey = nil
+
+function PoliceTerminalManager.IsPoliceVehicle(vehicle)
+    if not vehicle
+        or vehicle == 0
+        or not DoesEntityExist(vehicle)
+        or not IsEntityAVehicle(vehicle) then
+
+        return false
+    end
+
+    local vehicleModel = GetEntityModel(vehicle)
+
+    for _, fleet in pairs(PoliceFleet or {}) do
+        for _, definition in ipairs(fleet) do
+            if vehicleModel == GetHashKey(definition.model) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function getPedVehicleSeat(ped, vehicle)
+    if not vehicle or vehicle == 0 then
+        return nil
+    end
+
+    if GetPedInVehicleSeat(vehicle, -1) == ped then
+        return -1
+    end
+
+    for seat = 0, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
+        if GetPedInVehicleSeat(vehicle, seat) == ped then
+            return seat
+        end
+    end
+
+    return nil
+end
+
+local function printContextDiagnostic(context)
+    local speedBand = context.speedKmh > DRIVER_SAFE_SPEED and "SAFE"
+        or (context.speedKmh < DRIVER_FULL_SPEED and "STOPPED" or "HYSTERESIS")
+    local diagnosticKey = table.concat({
+        tostring(context.currentPedVehicle),
+        tostring(context.vehicleModel),
+        tostring(context.isPoliceVehicle),
+        tostring(context.assignedVehicle),
+        tostring(context.isAssignedVehicle),
+        tostring(context.seat),
+        speedBand,
+        tostring(context.type),
+        tostring(PoliceTerminalManager.Mode),
+        tostring(PoliceTerminalManager.Opened)
+    }, "|")
+
+    if diagnosticKey == lastDiagnosticKey then
+        return
+    end
+
+    lastDiagnosticKey = diagnosticKey
+    print("[PoliceOS]")
+    print(("vehicle=%s"):format(tostring(context.currentPedVehicle)))
+    print(("model=%s"):format(tostring(context.vehicleModel)))
+    print(("isPoliceVehicle=%s"):format(tostring(context.isPoliceVehicle)))
+    print(("isAssignedVehicle=%s"):format(tostring(context.isAssignedVehicle)))
+    print(("seat=%s"):format(tostring(context.seat)))
+    print(("speed=%.1f"):format(context.speedKmh or 0.0))
+    print(("context=%s"):format(tostring(context.type)))
+    print(("mode=%s"):format(tostring(PoliceTerminalManager.Mode)))
+    print(("terminalOpen=%s"):format(tostring(PoliceTerminalManager.Opened)))
+end
 
 local function getIdentityName()
     local identity = PlayerData.Character
@@ -25,27 +99,42 @@ local function getIdentityName()
     return name ~= "" and name or nil
 end
 
-local function getAssignedVehicleContext(ped)
+local function getPoliceVehicleContext(ped)
     local assignedVehicle = PlayerData.Vehicle
     local currentVehicle = GetVehiclePedIsIn(ped, false)
-    local inAssignedVehicle = assignedVehicle
+    local isAssignedVehicle = assignedVehicle
         and assignedVehicle ~= 0
         and DoesEntityExist(assignedVehicle)
         and currentVehicle == assignedVehicle
-    local driver = inAssignedVehicle
-        and GetPedInVehicleSeat(assignedVehicle, -1) == ped
-    local passenger = inAssignedVehicle and not driver
-    local speedKmh = inAssignedVehicle
-        and GetEntitySpeed(assignedVehicle) * 3.6
+        or false
+    local isPoliceVehicle = PoliceTerminalManager.IsPoliceVehicle(
+        currentVehicle
+    )
+    local devVehicleContext = Config
+        and Config.DevMode == true
+        and DevManager
+        and DevManager.TestVehicle
+        and currentVehicle == DevManager.TestVehicle
+        or nil
+    local contextVehicle = isPoliceVehicle and currentVehicle or nil
+    local driver = contextVehicle
+        and GetPedInVehicleSeat(contextVehicle, -1) == ped
+    local passenger = contextVehicle and not driver
+    local speedKmh = contextVehicle
+        and GetEntitySpeed(contextVehicle) * 3.6
         or 0.0
 
-    return assignedVehicle, inAssignedVehicle, driver, passenger, speedKmh
+    return assignedVehicle, isAssignedVehicle, isPoliceVehicle,
+        driver, passenger, speedKmh, devVehicleContext == true,
+        contextVehicle
 end
 
 function PoliceTerminalManager.GetContext()
     local ped = PlayerPedId()
-    local assignedVehicle, inAssignedVehicle, driver, passenger, speedKmh =
-        getAssignedVehicleContext(ped)
+    local currentPedVehicle = GetVehiclePedIsIn(ped, false)
+    local assignedVehicle, isAssignedVehicle, isPoliceVehicle,
+        driver, passenger, speedKmh, isDevVehicleContext,
+        contextVehicle = getPoliceVehicleContext(ped)
     local contextType = driver and "VEHICLE_DRIVER"
         or (passenger and "VEHICLE_PASSENGER")
         or "ON_FOOT"
@@ -67,8 +156,10 @@ function PoliceTerminalManager.GetContext()
 
     local context = {
         type = contextType,
-        onFoot = not inAssignedVehicle,
-        inAssignedVehicle = inAssignedVehicle == true,
+        onFoot = not isPoliceVehicle,
+        inAssignedVehicle = isAssignedVehicle == true,
+        isAssignedVehicle = isAssignedVehicle == true,
+        isPoliceVehicle = isPoliceVehicle == true,
         isDriver = driver == true,
         isPassenger = passenger == true,
         speedKmh = speedKmh,
@@ -81,10 +172,18 @@ function PoliceTerminalManager.GetContext()
         certifications = {},
         division = nil,
         assignment = nil,
-        assignedVehicle = assignedVehicle
+        assignedVehicle = assignedVehicle,
+        contextVehicle = contextVehicle,
+        isDevVehicleContext = isDevVehicleContext == true,
+        currentPedVehicle = currentPedVehicle,
+        vehicleModel = currentPedVehicle ~= 0
+            and GetEntityModel(currentPedVehicle)
+            or 0,
+        seat = getPedVehicleSeat(ped, currentPedVehicle)
     }
 
     PoliceTerminalManager.Context = context
+    printContextDiagnostic(context)
     return context
 end
 
@@ -131,11 +230,7 @@ local function getDutySnapshot()
 end
 
 local function getWidgetLayoutSnapshot(mode)
-    return {
-        uiScale = WidgetLayout.UIScale,
-        layout = WidgetLayout.GetLayout(mode),
-        futureWidgets = WidgetLayout.FutureWidgets
-    }
+    return WidgetLayoutManager.GetSnapshot(mode)
 end
 
 function PoliceTerminalManager.GetSnapshot()

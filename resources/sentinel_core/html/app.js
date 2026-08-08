@@ -19,8 +19,22 @@ const terminalState = {
     activeModule: "HOME",
     modules: [],
     widgetLayout: {},
+    widgetKeys: {},
     snapshot: {}
 };
+
+const widgetEditorState = {
+    active: false,
+    mode: "PDA",
+    preferences: null,
+    defaults: null,
+    presets: {},
+    editableWidgets: [],
+    drag: null
+};
+
+const diagnosedDomModes = new Set();
+const resolvedWidgetDiagnostics = new Set();
 
 const moduleDescriptions = {
     PEOPLE: "Consulta ciudadana básica preparada para una fase posterior.",
@@ -51,6 +65,29 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+function cloneData(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function logWidgetMutation(source, mode, widgetId, previous, current) {
+    if (!previous || !current) return;
+    if (previous.anchor === current.anchor
+        && previous.x === current.x
+        && previous.y === current.y
+        && previous.scale === current.scale
+        && previous.visible === current.visible) return;
+    console.log("[WidgetLayout MUTATION]");
+    console.log(`source=${source}`);
+    console.log(`mode=${mode}`);
+    console.log(`widget=${widgetId}`);
+    console.log(`oldAnchor=${previous.anchor}`);
+    console.log(`newAnchor=${current.anchor}`);
+    console.log(`oldX=${previous.x}`);
+    console.log(`newX=${current.x}`);
+    console.log(`oldY=${previous.y}`);
+    console.log(`newY=${current.y}`);
 }
 
 function iconSvg(name, className = "terminal-icon") {
@@ -111,17 +148,6 @@ function ensureTerminalShell() {
         document.querySelector(".topbar > div").appendChild(modeBadge);
     }
 
-    let safePanel = document.getElementById("driverSafePanel");
-    if (!safePanel) {
-        safePanel = document.createElement("section");
-        safePanel.id = "driverSafePanel";
-        safePanel.className = "driver-safe-panel hidden";
-        document.querySelector(".workspace").insertBefore(
-            safePanel,
-            document.querySelector(".workspace-footer")
-        );
-    }
-
     ensureDockSystem();
 }
 
@@ -166,19 +192,118 @@ function applyWidgetLayout() {
         String(config.uiScale || 1)
     );
 
-    document.querySelectorAll(".os-widget").forEach((widget) => {
+    document.querySelectorAll(".os-widget:not(.editor-only)").forEach((widget) => {
         const widgetConfig = layout[widget.id];
-        widget.classList.toggle("hidden", !widgetConfig?.visible);
+        const preference = config.widgets?.[widget.id];
+        const requiredDriverSpeed = terminalState.mode === "DRIVER_SAFE"
+            && widget.id === "SpeedWidget";
+        const visible = widgetConfig?.visible
+            && (requiredDriverSpeed
+                || (preference ? preference.visible !== false : true));
+        widget.classList.toggle("hidden", !visible);
 
-        if (!widgetConfig?.visible) return;
+        if (!visible) return;
+
+        if (preference) {
+            positionWidget(widget, preference);
+            document.getElementById("terminalDockRoot")?.appendChild(widget);
+            return;
+        }
 
         const dock = document.querySelector(
             `[data-dock="${widgetConfig.dock}"]`
         );
         widget.dataset.size = widgetConfig.size || "COMPACT";
         widget.style.order = Number(widgetConfig.order) || 0;
+        widget.style.marginTop = `${Number(widgetConfig.offsetY) || 0}rem`;
+        widget.style.marginRight = `${Number(widgetConfig.offsetX) || 0}rem`;
         dock?.appendChild(widget);
     });
+}
+
+function anchorTranslate(anchor) {
+    const translations = {
+        TOP_LEFT: "0% 0%",
+        TOP: "-50% 0%",
+        TOP_RIGHT: "-100% 0%",
+        RIGHT: "-100% -50%",
+        BOTTOM_RIGHT: "-100% -100%",
+        BOTTOM: "-50% -100%",
+        BOTTOM_LEFT: "0% -100%",
+        LEFT: "0% -50%",
+        FREE: "0% 0%"
+    };
+    return translations[anchor] || translations.FREE;
+}
+
+function positionWidget(widget, config, editor = false) {
+    widget.classList.add("free-widget");
+    const x = Math.max(2, Math.min(98, Number(config.x) || 50));
+    const y = Math.max(2, Math.min(98, Number(config.y) || 50));
+    widget.style.left = `${window.innerWidth * x / 100}px`;
+    widget.style.top = `${window.innerHeight * y / 100}px`;
+    widget.style.translate = anchorTranslate(config.anchor);
+    widget.style.setProperty("--widget-scale", String(Number(config.scale) || 1));
+    widget.classList.toggle("editor-disabled", editor && config.visible === false);
+    requestAnimationFrame(() => {
+        constrainWidgetToViewport(widget);
+        logResolvedWidget(widget, config);
+    });
+}
+
+function constrainWidgetToViewport(widget) {
+    if (getComputedStyle(widget).display === "none") return;
+    const marginX = window.innerWidth * 0.01;
+    const marginY = window.innerHeight * 0.01;
+    const rect = widget.getBoundingClientRect();
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (rect.left < marginX) offsetX = marginX - rect.left;
+    else if (rect.right > window.innerWidth - marginX) offsetX = window.innerWidth - marginX - rect.right;
+    if (rect.top < marginY) offsetY = marginY - rect.top;
+    else if (rect.bottom > window.innerHeight - marginY) offsetY = window.innerHeight - marginY - rect.bottom;
+
+    if (offsetX || offsetY) {
+        const style = getComputedStyle(widget);
+        widget.style.left = `${parseFloat(style.left) + offsetX}px`;
+        widget.style.top = `${parseFloat(style.top) + offsetY}px`;
+    }
+}
+
+function logResolvedWidget(widget, config) {
+    const rect = widget.getBoundingClientRect();
+    const key = [
+        terminalState.mode,
+        widget.id,
+        window.innerWidth,
+        window.innerHeight,
+        config.anchor,
+        Number(config.x).toFixed(4),
+        Number(config.y).toFixed(4),
+        Number(config.scale).toFixed(3)
+    ].join("|");
+
+    if (resolvedWidgetDiagnostics.has(key)) return;
+    resolvedWidgetDiagnostics.add(key);
+    console.log("[WidgetLayout RESOLVED]");
+    console.log(`widget=${widget.id}`);
+    console.log(`screen=${window.innerWidth}x${window.innerHeight}`);
+    console.log(`finalX=${rect.left.toFixed(2)}`);
+    console.log(`finalY=${rect.top.toFixed(2)}`);
+    console.log(`finalW=${rect.width.toFixed(2)}`);
+    console.log(`finalH=${rect.height.toFixed(2)}`);
+}
+
+function widgetChanged(widgetId, value) {
+    const nextKey = JSON.stringify(value);
+
+    if (terminalState.widgetKeys[widgetId] === nextKey) {
+        return false;
+    }
+
+    terminalState.widgetKeys[widgetId] = nextKey;
+    return true;
 }
 
 function renderModules() {
@@ -198,7 +323,7 @@ function renderModules() {
             return `
                 <button class="nav-button ${terminalState.activeModule === module.id ? "active" : ""} ${state}"
                     data-module="${escapeHtml(module.id)}" data-enabled="${state === "available"}"
-                    title="${escapeHtml(module.reason || "Disponible")}" type="button">
+                    title="${escapeHtml(`${module.label} · ${module.reason || "Disponible"}`)}" type="button">
                     ${iconSvg(module.id)}
                     <strong>${escapeHtml(module.label)}</strong>
                     <small>${suffix}</small>
@@ -283,9 +408,13 @@ function renderHome(snapshot) {
     ).join("");
     const dutyAction = duty.onDuty ? "duty.stop" : "duty.start";
     const dutyLabel = duty.onDuty ? "FINALIZAR TURNO" : "INICIAR TURNO";
+    const history = Array.isArray(snapshot.cases?.history)
+        ? snapshot.cases.history
+        : Object.values(snapshot.cases?.history || {});
+    const lastCase = history[history.length - 1];
     homeExtras.innerHTML = `
         <article class="terminal-mini-card duty-card ${duty.onDuty ? "is-on-duty" : "is-off-duty"}">
-            <span>ESTADO PROFESIONAL</span><strong>${duty.onDuty ? "EN SERVICIO" : "Fuera de servicio"}</strong>
+            <span>${escapeHtml(officer.name || "OFICIAL")} · ${escapeHtml(officer.effectiveRank || officer.rank || "Cadete")}</span><strong>${duty.onDuty ? "EN SERVICIO" : "Fuera de servicio"}</strong>
             <p>${duty.onDuty ? `${escapeHtml(duty.callsign || "Sin callsign")} · ${escapeHtml(officer.effectiveRank || officer.rank || "Cadete")}` : "Inicia un turno para acceder a funciones operativas."}</p>
             <button data-terminal-action="${dutyAction}">${dutyLabel}</button>
         </article>
@@ -296,36 +425,42 @@ function renderHome(snapshot) {
             <strong>${escapeHtml(alert?.title || "Sin alertas")}</strong><p>${escapeHtml(alert?.message || "No hay novedades operativas.")}</p>${alertActions}
         </article>
         <article class="terminal-mini-card quick-actions"><span>ACCESOS RÁPIDOS</span>
+            <p>ÚLTIMO CASO · ${escapeHtml(lastCase?.title || "Sin expedientes archivados")}</p>
             <button data-open-module="CAD" ${duty.onDuty ? "" : "disabled"}>CAD</button>
             <button data-open-module="MAP" ${duty.onDuty ? "" : "disabled"}>MAPA</button>
         </article>`;
 }
 
-function renderSafeMode(snapshot) {
-    const panel = document.getElementById("driverSafePanel");
-    const dispatch = snapshot.dispatch || {};
-    const vehicle = snapshot.vehicle || {};
-    const context = snapshot.context || {};
-    const alert = snapshot.activeAlert || (snapshot.alerts || [])[0];
-    const duty = snapshot.duty || {};
-    const distance = dispatch.distance ? `${Math.round(dispatch.distance)} m` : "—";
-    panel.innerHTML = `
-        <header><div><span>DRIVER SAFE</span><strong>${escapeHtml(duty.callsign || "SIN CALLSIGN")}</strong></div><b>${Math.round(context.speedKmh || 0)}<small>km/h</small></b></header>
-        <div class="safe-status"><span>ESTADO</span><strong>${escapeHtml(statusLabel(duty.dispatchState))}</strong></div>
-        <article class="safe-alert priority-${escapeHtml((alert?.priority || "LOW").toLowerCase())}">
-            <span>${alertIcon(alert?.type)} ALERTA PRIORITARIA</span><h3>${escapeHtml(alert?.title || "Sin alertas")}</h3>
-            <p>${escapeHtml(alert?.message || "Sin novedades críticas.")}</p>
-        </article>
-        <article class="safe-dispatch"><span>CAD · ${escapeHtml(dispatch.lifecycle || "NONE")}</span>
-            <h3>${escapeHtml(dispatch.title || "Sin despacho activo")}</h3>
-            <dl><div><dt>CÓDIGO</dt><dd>${escapeHtml(dispatch.code || "—")}</dd></div><div><dt>DISTANCIA</dt><dd>${distance}</dd></div></dl>
-        </article>
-        <div class="safe-unit"><span>${iconSvg("unit")} ${escapeHtml(vehicle.label || "Sin unidad")}</span><strong>${escapeHtml(vehicle.state || "NONE")}</strong></div>
-        <footer>
-            ${dispatch.canAccept ? "<strong>Y · ACEPTAR LLAMADA</strong>" : ""}
-            ${vehicle.assigned ? "<strong>/locateunit · GPS</strong>" : ""}
-            <span>${context.fullModeAvailable ? "Vehículo detenido · F7 para terminal completo" : "F7 · CERRAR VISTA SEGURA"}</span>
-        </footer>`;
+function renderDashboardIfChanged() {
+    if (terminalState.mode === "DRIVER_SAFE"
+        || terminalState.activeModule !== "HOME") return;
+
+    const snapshot = terminalState.snapshot;
+    const rawHistory = snapshot.cases?.history || [];
+    const history = Array.isArray(rawHistory)
+        ? rawHistory
+        : Object.values(rawHistory);
+    const lastCase = history[history.length - 1];
+    const key = {
+        officer: snapshot.officer,
+        duty: snapshot.duty,
+        vehicle: {
+            assigned: snapshot.vehicle?.assigned,
+            label: snapshot.vehicle?.label,
+            state: snapshot.vehicle?.state
+        },
+        dispatch: {
+            lifecycle: snapshot.dispatch?.lifecycle,
+            code: snapshot.dispatch?.code,
+            title: snapshot.dispatch?.title
+        },
+        alertId: snapshot.activeAlert?.id,
+        lastCaseId: lastCase?.id
+    };
+
+    if (!widgetChanged("DashboardWidget", key)) return;
+    renderHome(snapshot);
+    bindTerminalActions();
 }
 
 function renderAlertWidget() {
@@ -333,7 +468,21 @@ function renderAlertWidget() {
     const snapshot = terminalState.snapshot;
     const alert = snapshot.activeAlert || (snapshot.alerts || [])[0];
 
-    widget.className = `os-widget alert-widget priority-${String(alert?.priority || "LOW").toLowerCase()}`;
+    if (!widgetChanged("AlertWidget", alert || null)) return;
+
+    widget.classList.remove(
+        "priority-low",
+        "priority-normal",
+        "priority-high",
+        "priority-emergency"
+    );
+    widget.classList.add(
+        `priority-${String(alert?.priority || "LOW").toLowerCase()}`
+    );
+    widget.classList.toggle(
+        "context-hidden",
+        !alert && !widgetEditorState.active
+    );
     widget.innerHTML = alert ? `
         <header>${alertIcon(alert.type)}<span>${escapeHtml(alert.source || alert.type)}</span><b>${escapeHtml(priorityLabel(alert.priority))}</b></header>
         <strong>${escapeHtml(alert.title)}</strong>
@@ -346,6 +495,17 @@ function renderUnitWidget() {
     const widget = document.getElementById("UnitWidget");
     const duty = terminalState.snapshot.duty || {};
     const vehicle = terminalState.snapshot.vehicle || {};
+    const view = {
+        callsign: duty.callsign,
+        state: vehicle.state,
+        label: vehicle.label
+    };
+
+    if (!widgetChanged("UnitWidget", view)) return;
+    widget.classList.toggle(
+        "is-minimal",
+        vehicle.state === "ACTIVE"
+    );
     widget.innerHTML = `
         <header>${iconSvg("unit")}<span>UNIDAD</span></header>
         <strong>${escapeHtml(duty.callsign || "SIN ASIGNAR")}</strong>
@@ -356,17 +516,44 @@ function renderUnitWidget() {
 function renderDispatchWidget() {
     const widget = document.getElementById("DispatchWidget");
     const dispatch = terminalState.snapshot.dispatch || {};
+
+    const inactive = !dispatch.lifecycle
+        || dispatch.lifecycle === "NONE";
+
+    if (!widgetChanged("DispatchWidget", {
+        mode: terminalState.mode,
+        lifecycle: dispatch.lifecycle,
+        title: dispatch.title,
+        code: dispatch.code,
+        distance: dispatch.distance
+            ? Math.round(dispatch.distance / 10) * 10
+            : null,
+        canAccept: dispatch.canAccept
+    })) return;
+    widget.classList.toggle(
+        "is-collapsed",
+        inactive && !widgetEditorState.active
+    );
+    widget.classList.toggle(
+        "context-hidden",
+        inactive
+            && terminalState.mode === "DRIVER_SAFE"
+            && !widgetEditorState.active
+    );
     widget.innerHTML = `
         <header>${iconSvg("cad")}<span>CAD · ${escapeHtml(dispatch.lifecycle || "NONE")}</span></header>
-        <strong>${escapeHtml(dispatch.title || "Sin llamada activa")}</strong>
+        ${inactive ? "" : `<strong>${escapeHtml(dispatch.title || "Sin llamada activa")}</strong>`}
+        ${inactive ? "" : `
         <dl><div><dt>CÓDIGO</dt><dd>${escapeHtml(dispatch.code || "—")}</dd></div>
         <div><dt>DISTANCIA</dt><dd>${dispatch.distance ? `${Math.round(dispatch.distance)} m` : "—"}</dd></div></dl>
-        ${dispatch.canAccept ? '<small>Y · ACEPTAR</small>' : ""}`;
+        ${dispatch.canAccept ? '<small>Y · ACEPTAR</small>' : ""}`}`;
 }
 
 function renderSpeedWidget() {
     const widget = document.getElementById("SpeedWidget");
     const speed = Math.round(terminalState.snapshot.context?.speedKmh || 0);
+
+    if (!widgetChanged("SpeedWidget", speed)) return;
     widget.innerHTML = `<span>SPD</span><strong>${speed}</strong><small>km/h</small>`;
 }
 
@@ -378,7 +565,12 @@ function renderHintWidget() {
             ? "Vehículo detenido · terminal completo"
             : "Cerrar vista segura")
         : "Cerrar Police OS";
+
+    if (!widgetChanged("HintWidget", message)) return;
     widget.innerHTML = `<kbd>F7</kbd><span>${message}</span>`;
+    widget.classList.remove("hint-transient");
+    void widget.offsetWidth;
+    widget.classList.add("hint-transient");
 }
 
 function renderOperationalWidgets() {
@@ -387,6 +579,12 @@ function renderOperationalWidgets() {
     renderDispatchWidget();
     renderSpeedWidget();
     renderHintWidget();
+    requestAnimationFrame(() => {
+        ["AlertWidget", "UnitWidget", "DispatchWidget", "SpeedWidget", "HintWidget"]
+            .map((id) => document.getElementById(id))
+            .filter(Boolean)
+            .forEach(constrainWidgetToViewport);
+    });
 }
 
 function renderGeneric(moduleId, snapshot) {
@@ -418,16 +616,12 @@ function renderTerminal() {
     const snapshot = terminalState.snapshot;
     const mode = terminalState.mode;
     mdt.className = `mode-${mode.toLowerCase().replaceAll("_", "-")}`;
+    applyWidgetLayout();
     setText("terminalModeBadge", ({PDA: "PDA · CAMPO", DRIVER_SAFE: "CONDUCCIÓN SEGURA", VEHICLE_FULL: "TERMINAL VEHICULAR"})[mode]);
     document.querySelectorAll(".page").forEach((page) => page.classList.remove("active"));
-    const safePanel = document.getElementById("driverSafePanel");
-    safePanel.classList.toggle("hidden", mode !== "DRIVER_SAFE");
-    document.querySelector(".sidebar").classList.toggle("hidden", mode === "DRIVER_SAFE");
-    closeButton.classList.toggle("hidden", mode === "DRIVER_SAFE");
-
     if (mode === "DRIVER_SAFE") {
-        pageTitle.textContent = "Operación en movimiento";
-        renderSafeMode(snapshot);
+        renderOperationalWidgets();
+        diagnoseTerminalDom();
         return;
     }
 
@@ -439,7 +633,49 @@ function renderTerminal() {
     renderHome(snapshot);
     renderHistory(snapshot.cases?.history || []);
     if (targetPage === "people") renderGeneric(moduleId, snapshot);
+    renderOperationalWidgets();
+    diagnoseTerminalDom();
     bindTerminalActions();
+}
+
+function diagnoseTerminalDom() {
+    const mode = terminalState.mode;
+
+    if (diagnosedDomModes.has(mode)) return;
+    diagnosedDomModes.add(mode);
+
+    requestAnimationFrame(() => {
+        [
+            "TerminalWidget",
+            "HUDWidget",
+            "AlertWidget",
+            "UnitWidget",
+            "DispatchWidget",
+            "SpeedWidget",
+            "HintWidget"
+        ].forEach((widgetId) => {
+            const widget = document.getElementById(widgetId);
+
+            if (!widget) {
+                console.log(`[PoliceOS DOM] ${widgetId} exists=false`);
+                return;
+            }
+
+            const computed = getComputedStyle(widget);
+            const rect = widget.getBoundingClientRect();
+            const dock = widget.parentElement?.dataset?.dock
+                || (widget.classList.contains("free-widget") ? "FREE" : "ROOT");
+            const hasData = widget.textContent.trim().length > 0
+                && !widget.classList.contains("context-hidden");
+
+            console.log(
+                `[PoliceOS DOM] ${widgetId} exists=true display=${computed.display}`
+                + ` visibility=${computed.visibility}`
+                + ` ${Math.round(rect.width)}x${Math.round(rect.height)}`
+                + ` dock=${dock} hasData=${hasData}`
+            );
+        });
+    });
 }
 
 function bindTerminalActions() {
@@ -471,18 +707,43 @@ function bindTerminalActions() {
 
 function mergeTerminalUpdate(domain, data) {
     if (domain === "context" || domain === "mode") {
+        const previousMode = terminalState.mode;
         terminalState.mode = data.mode || terminalState.mode;
         terminalState.activeModule = data.activeModule || terminalState.activeModule;
         Object.assign(terminalState.snapshot, data);
         if (data.modules) terminalState.modules = data.modules;
+        if (data.widgetLayout) terminalState.widgetLayout = data.widgetLayout;
+
+        if (previousMode !== terminalState.mode) {
+            renderModules();
+            renderTerminal();
+            return;
+        }
+
+        renderSpeedWidget();
+        renderUnitWidget();
+        renderDispatchWidget();
+        renderHintWidget();
+        renderDashboardIfChanged();
+        return;
     } else if (domain === "alerts") {
         Object.assign(terminalState.snapshot, data);
+        renderAlertWidget();
+        renderDashboardIfChanged();
+        return;
     } else if (domain === "navigation") {
         terminalState.activeModule = data.activeModule || "HOME";
     } else if (domain === "home") {
         terminalState.snapshot = data;
+        terminalState.widgetLayout = data.widgetLayout || terminalState.widgetLayout;
     } else {
         terminalState.snapshot[domain] = data;
+
+        if (domain === "vehicle") renderUnitWidget();
+        if (domain === "dispatch") renderDispatchWidget();
+        if (domain === "cases") renderHistory(data.history || []);
+        renderDashboardIfChanged();
+        return;
     }
     renderModules();
     renderTerminal();
@@ -514,16 +775,392 @@ function updatePoliceGarage(data = {}) {
     garageNextUnlock.classList.toggle("hidden", !data.nextUnlock);
 }
 
+function editorModePreferences() {
+    return widgetEditorState.preferences?.modes?.[widgetEditorState.mode] || {};
+}
+
+function ensureEditorElements() {
+    if (!document.getElementById("HUDWidget")) {
+        const hud = document.createElement("section");
+        hud.id = "HUDWidget";
+        hud.className = "os-widget hud-widget editor-only";
+        hud.innerHTML = `<header>${iconSvg("unit")}<span>HUD</span></header><strong>OFICIAL · RANGO</strong><p>CALLSIGN · ACTIVE</p>`;
+        document.getElementById("terminalDockRoot").appendChild(hud);
+    }
+
+    if (!document.getElementById("widgetEditorPanel")) {
+        const panel = document.createElement("aside");
+        panel.id = "widgetEditorPanel";
+        panel.className = "widget-editor-panel";
+        mdt.appendChild(panel);
+    }
+
+    if (!document.getElementById("widgetAlignmentGuides")) {
+        const guides = document.createElement("div");
+        guides.id = "widgetAlignmentGuides";
+        guides.innerHTML = '<i data-guide="vertical"></i><i data-guide="horizontal"></i>';
+        mdt.appendChild(guides);
+    }
+}
+
+function hideAlignmentGuides() {
+    document.querySelectorAll("#widgetAlignmentGuides i").forEach((guide) => {
+        guide.classList.remove("visible");
+    });
+}
+
+function showAlignmentGuide(axis, position) {
+    const guide = document.querySelector(`#widgetAlignmentGuides [data-guide="${axis}"]`);
+    if (!guide) return;
+    guide.style[axis === "vertical" ? "left" : "top"] = `${position}px`;
+    guide.classList.add("visible");
+}
+
+function getEditorPeers(widget) {
+    return [...document.querySelectorAll(".editor-widget")].filter((peer) =>
+        peer !== widget
+        && !peer.classList.contains("editor-disabled")
+        && getComputedStyle(peer).display !== "none"
+    );
+}
+
+function overlapRatio(left, right) {
+    const overlapWidth = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
+    const overlapHeight = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+    const smallestArea = Math.min(left.width * left.height, right.width * right.height);
+    return smallestArea > 0 ? overlapWidth * overlapHeight / smallestArea : 0;
+}
+
+function resolveFreeSnap(widget, left, top) {
+    const tolerance = 10;
+    const rect = widget.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const marginX = window.innerWidth * 0.01;
+    const marginY = window.innerHeight * 0.01;
+    const xCandidates = [
+        {value: marginX, guide: marginX},
+        {value: window.innerWidth - marginX - width, guide: window.innerWidth - marginX}
+    ];
+    const yCandidates = [
+        {value: marginY, guide: marginY},
+        {value: window.innerHeight - marginY - height, guide: window.innerHeight - marginY}
+    ];
+
+    getEditorPeers(widget).forEach((peer) => {
+        const peerRect = peer.getBoundingClientRect();
+        xCandidates.push(
+            {value: peerRect.left, guide: peerRect.left},
+            {value: peerRect.right, guide: peerRect.right},
+            {value: peerRect.left + peerRect.width / 2 - width / 2, guide: peerRect.left + peerRect.width / 2},
+            {value: peerRect.left - width - 8, guide: peerRect.left - 4},
+            {value: peerRect.right + 8, guide: peerRect.right + 4}
+        );
+        yCandidates.push(
+            {value: peerRect.top, guide: peerRect.top},
+            {value: peerRect.bottom, guide: peerRect.bottom},
+            {value: peerRect.top + peerRect.height / 2 - height / 2, guide: peerRect.top + peerRect.height / 2},
+            {value: peerRect.top - height - 8, guide: peerRect.top - 4},
+            {value: peerRect.bottom + 8, guide: peerRect.bottom + 4}
+        );
+    });
+
+    hideAlignmentGuides();
+    const snapX = xCandidates.reduce((best, candidate) =>
+        Math.abs(candidate.value - left) < Math.abs(best.value - left) ? candidate : best,
+        {value: left + tolerance + 1, guide: null}
+    );
+    const snapY = yCandidates.reduce((best, candidate) =>
+        Math.abs(candidate.value - top) < Math.abs(best.value - top) ? candidate : best,
+        {value: top + tolerance + 1, guide: null}
+    );
+
+    if (Math.abs(snapX.value - left) <= tolerance) {
+        left = snapX.value;
+        showAlignmentGuide("vertical", snapX.guide);
+    }
+    if (Math.abs(snapY.value - top) <= tolerance) {
+        top = snapY.value;
+        showAlignmentGuide("horizontal", snapY.guide);
+    }
+    return {left, top};
+}
+
+function updateLayoutConflict(widget) {
+    const rect = widget.getBoundingClientRect();
+    const conflict = getEditorPeers(widget).some((peer) =>
+        overlapRatio(rect, peer.getBoundingClientRect()) > 0.15
+    );
+    widget.classList.toggle("layout-conflict", conflict);
+    return conflict;
+}
+
+function separateFreeOverlap(widget, config) {
+    let rect = widget.getBoundingClientRect();
+    const peer = getEditorPeers(widget).find((candidate) =>
+        overlapRatio(rect, candidate.getBoundingClientRect()) > 0.15
+    );
+    if (!peer) return;
+
+    const other = peer.getBoundingClientRect();
+    const moveLeft = other.left - rect.right - 8;
+    const moveRight = other.right - rect.left + 8;
+    const moveUp = other.top - rect.bottom - 8;
+    const moveDown = other.bottom - rect.top + 8;
+    const options = [
+        {axis: "x", delta: moveLeft}, {axis: "x", delta: moveRight},
+        {axis: "y", delta: moveUp}, {axis: "y", delta: moveDown}
+    ].sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
+    const selected = options[0];
+    let left = rect.left + (selected.axis === "x" ? selected.delta : 0);
+    let top = rect.top + (selected.axis === "y" ? selected.delta : 0);
+    left = Math.max(window.innerWidth * 0.01, Math.min(window.innerWidth * 0.99 - rect.width, left));
+    top = Math.max(window.innerHeight * 0.01, Math.min(window.innerHeight * 0.99 - rect.height, top));
+    config.x = left / window.innerWidth * 100;
+    config.y = top / window.innerHeight * 100;
+    positionWidget(widget, config, true);
+}
+
+function snapWidget(widgetId, anchor) {
+    const config = editorModePreferences()[widgetId];
+    const points = {
+        TOP_LEFT: [2, 3], TOP: [50, 3], TOP_RIGHT: [98, 3],
+        RIGHT: [98, 50], BOTTOM_RIGHT: [98, 97],
+        BOTTOM: [50, 97], BOTTOM_LEFT: [2, 97], LEFT: [2, 50]
+    };
+    config.anchor = anchor;
+
+    if (points[anchor]) {
+        [config.x, config.y] = points[anchor];
+    }
+}
+
+function renderEditorPanel() {
+    const panel = document.getElementById("widgetEditorPanel");
+    const preferences = widgetEditorState.preferences;
+    const modePreferences = editorModePreferences();
+    const anchors = ["FREE", "TOP_LEFT", "TOP", "TOP_RIGHT", "RIGHT", "BOTTOM_RIGHT", "BOTTOM", "BOTTOM_LEFT", "LEFT"];
+
+    panel.innerHTML = `
+        <header><div><span>POLICE OS CONFIG</span><strong>Widget Layout Editor</strong></div><small>${escapeHtml(widgetEditorState.mode)}</small></header>
+        <label class="editor-field"><span>PRESET</span><select id="editorPreset">${Object.keys(widgetEditorState.presets).map((preset) => `<option ${preferences.preset === preset ? "selected" : ""}>${preset}</option>`).join("")}</select></label>
+        <label class="editor-field"><span>ESCALA UI</span><select id="editorUiScale">${[0.8, 0.9, 1, 1.1, 1.25].map((scale) => `<option value="${scale}" ${Number(preferences.uiScale) === scale ? "selected" : ""}>${Math.round(scale * 100)}%</option>`).join("")}</select></label>
+        <section class="editor-widget-list">${widgetEditorState.editableWidgets.map((widgetId) => {
+            const config = modePreferences[widgetId];
+            return `<article data-editor-row="${widgetId}"><label title="${widgetId}"><input type="checkbox" data-widget-visible="${widgetId}" ${config.visible ? "checked" : ""}><span>${widgetId.replace("Widget", "")}</span></label>
+                <select data-widget-anchor="${widgetId}">${anchors.map((anchor) => `<option ${config.anchor === anchor ? "selected" : ""}>${anchor}</option>`).join("")}</select></article>`;
+        }).join("")}</section>
+        <p>Arrastra widgets. Usa el tirador inferior para escalar.</p>
+        <footer><button id="editorReset" class="secondary">RESTAURAR</button><button id="editorCancel" class="secondary">CANCELAR</button><button id="editorSave">GUARDAR</button></footer>`;
+
+    panel.querySelector("#editorPreset").onchange = (event) => {
+        preferences.preset = event.target.value;
+        const preset = widgetEditorState.presets[preferences.preset] || {};
+        widgetEditorState.editableWidgets.forEach((widgetId) => {
+            const previous = cloneData(modePreferences[widgetId]);
+            modePreferences[widgetId].visible = preset[widgetId] !== false;
+            logWidgetMutation("PRESET", widgetEditorState.mode, widgetId, previous, modePreferences[widgetId]);
+        });
+        renderEditorPanel();
+        applyEditorWidgets();
+    };
+    panel.querySelector("#editorUiScale").onchange = (event) => {
+        preferences.uiScale = Number(event.target.value);
+        document.documentElement.style.setProperty("--police-ui-scale", preferences.uiScale);
+    };
+    panel.querySelectorAll("[data-widget-visible]").forEach((input) => {
+        input.onchange = () => {
+            const widgetId = input.dataset.widgetVisible;
+            const previous = cloneData(modePreferences[widgetId]);
+            modePreferences[widgetId].visible = input.checked;
+            logWidgetMutation("VISIBILITY", widgetEditorState.mode, widgetId, previous, modePreferences[widgetId]);
+            applyEditorWidgets();
+        };
+    });
+    panel.querySelectorAll("[data-widget-anchor]").forEach((select) => {
+        select.onchange = () => {
+            const widgetId = select.dataset.widgetAnchor;
+            const previous = cloneData(modePreferences[widgetId]);
+            snapWidget(widgetId, select.value);
+            logWidgetMutation("ANCHOR", widgetEditorState.mode, widgetId, previous, modePreferences[widgetId]);
+            applyEditorWidgets();
+        };
+    });
+    panel.querySelector("#editorCancel").onclick = () => postNui("widgetEditor:cancel");
+    panel.querySelector("#editorSave").onclick = () => {
+        captureFreeWidgetPositions();
+        postNui("widgetEditor:save", {preferences});
+    };
+    panel.querySelector("#editorReset").onclick = async () => {
+        const result = await (await postNui("widgetEditor:reset")).json();
+        if (result.ok) {
+            widgetEditorState.preferences = result.preferences;
+            renderEditorPanel();
+            applyEditorWidgets();
+        }
+    };
+}
+
+function captureFreeWidgetPositions() {
+    const modePreferences = editorModePreferences();
+
+    widgetEditorState.editableWidgets.forEach((widgetId) => {
+        const widget = document.getElementById(widgetId);
+        const config = modePreferences[widgetId];
+
+        if (!widget || !config || config.anchor !== "FREE") return;
+        constrainWidgetToViewport(widget);
+        const rect = widget.getBoundingClientRect();
+        config.x = rect.left / window.innerWidth * 100;
+        config.y = rect.top / window.innerHeight * 100;
+    });
+}
+
+function applyEditorWidgets() {
+    const modePreferences = editorModePreferences();
+    widgetEditorState.editableWidgets.forEach((widgetId) => {
+        const widget = document.getElementById(widgetId);
+        const config = modePreferences[widgetId];
+        if (!widget || !config) return;
+        widget.classList.remove("hidden", "context-hidden", "is-collapsed");
+        widget.classList.add("editor-widget");
+        positionWidget(widget, config, true);
+        document.getElementById("terminalDockRoot").appendChild(widget);
+
+        if (!widget.querySelector(".widget-resize")) {
+            const handle = document.createElement("button");
+            handle.className = "widget-resize";
+            handle.type = "button";
+            handle.title = "Arrastrar para escalar";
+            widget.appendChild(handle);
+        }
+    });
+}
+
+function openWidgetEditor(message) {
+    widgetEditorState.active = true;
+    widgetEditorState.mode = message.mode || "PDA";
+    widgetEditorState.preferences = cloneData(message.preferences);
+    widgetEditorState.defaults = cloneData(message.defaults);
+    widgetEditorState.presets = message.presets || {};
+    widgetEditorState.editableWidgets = message.editableWidgets || [];
+    terminalState.mode = widgetEditorState.mode;
+    terminalState.snapshot = message.snapshot || {};
+    const nativeHud = terminalState.snapshot.widgetLayout?.nativeHud || {};
+    document.documentElement.style.setProperty(
+        "--native-hud-width",
+        `${Number(nativeHud.width || 0.165) * 100}vw`
+    );
+    document.documentElement.style.setProperty(
+        "--native-hud-full-height",
+        `${Number(nativeHud.fullHeight || 0.122) * 100}vh`
+    );
+    document.documentElement.style.setProperty(
+        "--native-hud-minimal-height",
+        `${Number(nativeHud.minimalHeight || 0.066) * 100}vh`
+    );
+    terminalState.widgetKeys = {};
+    ensureEditorElements();
+    mdt.className = `widget-editor-active mode-${terminalState.mode.toLowerCase().replaceAll("_", "-")}`;
+    mdt.classList.remove("hidden");
+    renderOperationalWidgets();
+    renderEditorPanel();
+    applyEditorWidgets();
+}
+
+function closeWidgetEditor() {
+    widgetEditorState.active = false;
+    widgetEditorState.drag = null;
+    document.getElementById("widgetEditorPanel")?.remove();
+    document.getElementById("HUDWidget")?.remove();
+    document.getElementById("widgetAlignmentGuides")?.remove();
+    document.querySelectorAll(".editor-widget").forEach((widget) => {
+        widget.classList.remove("editor-widget", "editor-disabled");
+        widget.querySelector(".widget-resize")?.remove();
+    });
+    mdt.classList.add("hidden");
+}
+
+window.addEventListener("pointerdown", (event) => {
+    if (!widgetEditorState.active) return;
+    const widget = event.target.closest(".editor-widget");
+    if (!widget || event.target.closest("#widgetEditorPanel")) return;
+    event.preventDefault();
+    const config = editorModePreferences()[widget.id];
+    widget.setPointerCapture?.(event.pointerId);
+    widgetEditorState.drag = {
+        widget,
+        config,
+        resize: event.target.classList.contains("widget-resize"),
+        startX: event.clientX,
+        startY: event.clientY,
+        startScale: config.scale,
+        startConfig: cloneData(config),
+        grabX: event.clientX - widget.getBoundingClientRect().left,
+        grabY: event.clientY - widget.getBoundingClientRect().top
+    };
+});
+
+window.addEventListener("pointermove", (event) => {
+    const drag = widgetEditorState.drag;
+    if (!drag) return;
+    if (drag.resize) {
+        drag.config.scale = Math.max(0.6, Math.min(1.5, drag.startScale + (event.clientX - drag.startX) / 220));
+    } else {
+        drag.config.anchor = "FREE";
+        const rect = drag.widget.getBoundingClientRect();
+        const marginX = window.innerWidth * 0.01;
+        const marginY = window.innerHeight * 0.01;
+        let left = Math.max(
+            marginX,
+            Math.min(window.innerWidth - marginX - rect.width, event.clientX - drag.grabX)
+        );
+        let top = Math.max(
+            marginY,
+            Math.min(window.innerHeight - marginY - rect.height, event.clientY - drag.grabY)
+        );
+        const snapped = resolveFreeSnap(drag.widget, left, top);
+        left = snapped.left;
+        top = snapped.top;
+        drag.config.x = left / window.innerWidth * 100;
+        drag.config.y = top / window.innerHeight * 100;
+    }
+    positionWidget(drag.widget, drag.config, true);
+    requestAnimationFrame(() => updateLayoutConflict(drag.widget));
+});
+
+window.addEventListener("pointerup", () => {
+    if (!widgetEditorState.drag) return;
+    const drag = widgetEditorState.drag;
+    hideAlignmentGuides();
+    if (!drag.resize && drag.config.anchor === "FREE") {
+        separateFreeOverlap(drag.widget, drag.config);
+    }
+    logWidgetMutation(
+        drag.resize ? "SCALE" : "DRAG",
+        widgetEditorState.mode,
+        drag.widget.id,
+        drag.startConfig,
+        drag.config
+    );
+    drag.widget.classList.remove("layout-conflict");
+    captureFreeWidgetPositions();
+    widgetEditorState.drag = null;
+    renderEditorPanel();
+});
+
 ensureTerminalShell();
 
 window.addEventListener("message", (event) => {
     const message = event.data || {};
     if (message.action === "sentinel:version") sentinelVersion.textContent = `Sentinel AI v${message.version}`;
     if (message.action === "terminal:open") {
+        diagnosedDomModes.clear();
         terminalState.snapshot = message.data || {};
         terminalState.mode = message.mode || message.data?.mode || "PDA";
         terminalState.activeModule = message.data?.activeModule || "HOME";
         terminalState.modules = message.data?.modules || [];
+        terminalState.widgetLayout = message.data?.widgetLayout || {};
         renderModules(); renderTerminal(); mdt.classList.remove("hidden");
     }
     if (message.action === "terminal:update") mergeTerminalUpdate(message.domain, message.data || {});
@@ -531,6 +1168,8 @@ window.addEventListener("message", (event) => {
     if (message.action === "terminal:modules") { terminalState.modules = message.data || []; renderModules(); }
     if (message.action === "terminal:alert") mergeTerminalUpdate("alerts", message.data || {});
     if (message.action === "terminal:close") mdt.classList.add("hidden");
+    if (message.action === "widgetEditor:open") openWidgetEditor(message);
+    if (message.action === "widgetEditor:close") closeWidgetEditor();
     if (message.action === "garage:open") { mdt.classList.add("hidden"); updatePoliceGarage(message.data); policeGarage.classList.remove("hidden"); }
     if (message.action === "garage:update") updatePoliceGarage(message.data);
     if (message.action === "garage:close") policeGarage.classList.add("hidden");
@@ -569,5 +1208,163 @@ characterForm.addEventListener("submit", async (event) => {
 window.addEventListener("keydown", (event) => {
     if (!policeGarage.classList.contains("hidden")) { if (event.key === "Escape") event.preventDefault(); return; }
     if (!characterCreator.classList.contains("hidden")) { if (event.key === "Escape" || event.key === "F7") event.preventDefault(); return; }
+    if (widgetEditorState.active && (event.key === "Escape" || event.key === "F7")) {
+        event.preventDefault();
+        postNui("widgetEditor:cancel");
+        return;
+    }
+    if (event.key === "F7" && event.shiftKey && !mdt.classList.contains("hidden")) {
+        event.preventDefault();
+        postNui("widgetEditor:toggle");
+        return;
+    }
     if ((event.key === "Escape" || event.key === "F7") && !mdt.classList.contains("hidden")) { event.preventDefault(); postNui("closeMdt"); }
 });
+
+function runPoliceOsQaPreview() {
+    const qaParameters = new URLSearchParams(location.search);
+    const encodedSnapshot = qaParameters.get("qaSnapshot");
+
+    if (!encodedSnapshot) return;
+
+    try {
+        if (qaParameters.get("qaColor") === "1") {
+            const diagnosticStyle = document.createElement("style");
+            diagnosticStyle.textContent = `
+                .terminal-dock { background: rgba(255, 0, 255, .24) !important; }
+                .terminal-dock-root { background: rgba(0, 255, 0, .12) !important; }
+                .os-widget { background: rgba(0, 80, 255, .45) !important; }
+                .os-widget::before { height: .35rem !important; background: rgba(255, 0, 0, .9) !important; opacity: 1 !important; }
+            `;
+            document.head.appendChild(diagnosticStyle);
+        }
+
+        const snapshot = JSON.parse(decodeURIComponent(encodedSnapshot));
+        if (qaParameters.get("qaEditor") === "1" && snapshot.qaEditor) {
+            window.dispatchEvent(new MessageEvent("message", {
+                data: {
+                    action: "widgetEditor:open",
+                    mode: snapshot.mode,
+                    snapshot,
+                    preferences: snapshot.qaEditor.preferences,
+                    defaults: snapshot.qaEditor.preferences,
+                    editableWidgets: snapshot.qaEditor.editableWidgets,
+                    presets: snapshot.qaEditor.presets
+                }
+            }));
+        } else {
+            window.dispatchEvent(new MessageEvent("message", {
+                data: {action: "terminal:open", mode: snapshot.mode, data: snapshot}
+            }));
+        }
+
+        setTimeout(() => {
+            const ids = ["TerminalWidget", "HUDWidget", "AlertWidget", "UnitWidget", "DispatchWidget", "SpeedWidget", "HintWidget"];
+            const visible = [];
+            const widgets = {};
+
+            ids.forEach((id) => {
+                const element = document.getElementById(id);
+                if (!element) { widgets[id] = {exists: false}; return; }
+                const style = getComputedStyle(element);
+                const pseudo = getComputedStyle(element, "::before");
+                const parent = element.parentElement;
+                const parentStyle = parent ? getComputedStyle(parent) : null;
+                const parentRect = parent?.getBoundingClientRect();
+                const rect = element.getBoundingClientRect();
+                const shown = style.display !== "none"
+                    && style.visibility !== "hidden"
+                    && rect.width > 0
+                    && rect.height > 0;
+                widgets[id] = {
+                    exists: true,
+                    display: style.display,
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.width,
+                    height: rect.height,
+                    shown,
+                    contentWidth: element.scrollWidth,
+                    contentHeight: element.scrollHeight,
+                    computed: {
+                        display: style.display,
+                        position: style.position,
+                        width: style.width,
+                        minWidth: style.minWidth,
+                        maxWidth: style.maxWidth,
+                        height: style.height,
+                        minHeight: style.minHeight,
+                        maxHeight: style.maxHeight,
+                        inset: style.inset,
+                        top: style.top,
+                        right: style.right,
+                        bottom: style.bottom,
+                        left: style.left,
+                        flex: style.flex,
+                        flexBasis: style.flexBasis,
+                        alignSelf: style.alignSelf,
+                        justifySelf: style.justifySelf,
+                        overflow: style.overflow,
+                        background: style.background,
+                        backgroundColor: style.backgroundColor,
+                        backgroundImage: style.backgroundImage,
+                        boxShadow: style.boxShadow,
+                        filter: style.filter,
+                        backdropFilter: style.backdropFilter,
+                        border: style.border,
+                        padding: style.padding,
+                        margin: style.margin,
+                        transform: style.transform,
+                        zoom: style.zoom,
+                        opacity: style.opacity
+                    },
+                    pseudo: {
+                        background: pseudo.background,
+                        width: pseudo.width,
+                        height: pseudo.height
+                    },
+                    parent: parent ? {
+                        element: parent.id || parent.className || parent.tagName,
+                        left: parentRect.left,
+                        top: parentRect.top,
+                        right: parentRect.right,
+                        bottom: parentRect.bottom,
+                        width: parentRect.width,
+                        height: parentRect.height,
+                        background: parentStyle.background,
+                        backgroundColor: parentStyle.backgroundColor,
+                        backgroundImage: parentStyle.backgroundImage
+                    } : null
+                };
+                if (shown) visible.push({id, rect});
+            });
+
+            const overlaps = [];
+            visible.forEach((left, index) => visible.slice(index + 1).forEach((right) => {
+                const width = Math.max(0, Math.min(left.rect.right, right.rect.right) - Math.max(left.rect.left, right.rect.left));
+                const height = Math.max(0, Math.min(left.rect.bottom, right.rect.bottom) - Math.max(left.rect.top, right.rect.top));
+                if (width * height > 16) overlaps.push(`${left.id}/${right.id}`);
+            }));
+            const outside = visible.filter(({rect}) => rect.left < -1
+                || rect.top < -1
+                || rect.right > innerWidth + 1
+                || rect.bottom > innerHeight + 1).map(({id}) => id);
+            const docks = [...document.querySelectorAll(".terminal-dock-root, .terminal-dock")].map((element) => {
+                const style = getComputedStyle(element);
+                return {name: element.className, color: style.backgroundColor, image: style.backgroundImage};
+            });
+            const result = {mode: terminalState.mode, widgets, overlaps, outside, docks};
+            const output = document.createElement("pre");
+            output.id = "police-os-qa-result";
+            output.hidden = true;
+            output.textContent = JSON.stringify(result);
+            document.body.appendChild(output);
+        }, 250);
+    } catch (error) {
+        console.error("[PoliceOS QA] Snapshot invalido", error);
+    }
+}
+
+runPoliceOsQaPreview();
